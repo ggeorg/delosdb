@@ -22,6 +22,7 @@
 package org.apache.derby.impl.store.access.btree;
 
 import java.util.Properties;
+import java.util.concurrent.atomic.LongAdder;
 
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -69,9 +70,16 @@ import org.apache.derby.impl.store.raw.data.RawStorePreparedRow;
 public class BTreeController extends OpenBTree implements ConglomerateController
 {
 
+    /*
+     * Inserts route through the root routing snapshot instead of latching the
+     * root: the child is latched (waiting, holding nothing) and the snapshot
+     * is re-checked, so a root change falls back to the latched descent.
+     */
     private static final boolean INSERT_ROOT_ROUTING_SNAPSHOT =
-            Boolean.getBoolean(
-                    "delosdb.experimental.btreeInsertRootRoutingSnapshot.enabled");
+            !Boolean.getBoolean(
+                    "delosdb.btree.insertRootRoutingSnapshot.disabled");
+    private static final LongAdder INSERT_ROOT_SNAPSHOT_HITS = new LongAdder();
+    private static final LongAdder INSERT_ROOT_SNAPSHOT_FALLBACKS = new LongAdder();
     private static final boolean INSERT_BRANCH_ROUTING_SNAPSHOT =
             Boolean.getBoolean(
                     "delosdb.experimental.btreeInsertBranchRoutingSnapshot.enabled");
@@ -677,10 +685,18 @@ public class BTreeController extends OpenBTree implements ConglomerateController
             ControlRow routed =
                     getConglomerate().searchFromRootRoutingSnapshot(this, sp);
             if (routed != null) {
+                INSERT_ROOT_SNAPSHOT_HITS.increment();
                 return (LeafControlRow) routed;
             }
+            INSERT_ROOT_SNAPSHOT_FALLBACKS.increment();
         }
         return (LeafControlRow) ControlRow.get(this, BTree.ROOTPAGEID).search(sp);
+    }
+
+    /** Inserts routed through the root snapshot, then latched-root fallbacks. */
+    static long[] insertRootSnapshotCountsForTesting() {
+        return new long[] {INSERT_ROOT_SNAPSHOT_HITS.sum(),
+                INSERT_ROOT_SNAPSHOT_FALLBACKS.sum()};
     }
 
 	/**

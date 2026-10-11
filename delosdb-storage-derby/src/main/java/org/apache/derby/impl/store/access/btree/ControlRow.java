@@ -1887,16 +1887,46 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	
 
 
+    /*
+     * A page records one snapshot owner, but one index can have several live
+     * BTree instances. Each control row decodes its own instance from the root
+     * page, so after the root page is evicted and reloaded, logical undo
+     * (B2IUndo) and plans compiled after a conglomerate cache miss use a new
+     * instance while cached conglomerates and older plans keep the old one.
+     * A page change would then invalidate only the current owner's snapshot
+     * and leave the other instance routing on stale separators: reads miss
+     * rows, and inserts land in leaves that do not cover their keys. So a
+     * change of owner invalidates the previous owner's snapshot first. Owners
+     * change only under this page's exclusive latch, as do the page changes
+     * that invalidate them.
+     */
     final void observeRootRoutingSnapshot(BTree owner) {
+        BTree previous = rootRoutingOwner;
+        if (previous != null && previous != owner) {
+            previous.invalidateRootRoutingSnapshot();
+        }
         rootRoutingOwner = owner;
     }
 
     final void observeBranchRoutingSnapshot(BTree owner) {
+        BTree previous = branchRoutingSnapshotOwner;
+        if (previous != null && previous != owner
+                && branchRoutingSnapshotPageNumber
+                        != ContainerHandle.INVALID_PAGE_NUMBER) {
+            previous.invalidateBranchRoutingSnapshot(
+                    branchRoutingSnapshotPageNumber);
+        }
         branchRoutingSnapshotPageNumber = page.getPageNumber();
         branchRoutingSnapshotOwner = owner;
     }
 
     final void observeLeafReadSnapshot(BTree owner) {
+        BTree previous = leafReadSnapshotOwner;
+        if (previous != null && previous != owner
+                && leafReadSnapshotPageNumber
+                        != ContainerHandle.INVALID_PAGE_NUMBER) {
+            previous.invalidateLeafReadSnapshot(leafReadSnapshotPageNumber);
+        }
         leafReadSnapshotPageNumber = page.getPageNumber();
         leafReadSnapshotOwner = owner;
     }

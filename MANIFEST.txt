@@ -1,55 +1,55 @@
-DelosDB held-intent regrant
-===========================
+DelosDB B-tree insert root routing
+==================================
 
 Purpose
 -------
-Stop every row insert and update from taking the lock-table entry that all
-writers of a table share. A transaction re-requests the table's
-intent-exclusive (CIX) container lock on every row (and an index insert
-requests the base table's again, because B2IController reopens the heap), so
-an INDEXED row made 7 such requests, each locking the shared entry's
-ReentrantLock and scanning its granted list. PostgreSQL, InnoDB, H2 and
-Firebird all serve an already held table lock from backend/transaction-local
-state.
+Stop every B-tree insert from taking the index root's exclusive latch.
+With insert lanes and the held-intent regrant, PK and INDEXED inserts are
+bound by B-tree page latches, the root first: every insert latched it and
+coupled to the child. Inserts now route through the immutable root routing
+snapshot that keyed reads already use, latch the child while holding
+nothing, and re-check the snapshot (review doc section H, rule 1).
 
 Changes
 -------
-- AbstractPool.lockObject: a CIX request for a container lock the
-  compatibility space already holds in the same group is granted by
-  LockSpace.regrantHeld, without the lock table.
-  -Ddelosdb.locks.heldIntentRegrant.disabled=true restores the old path.
-- LockSpace: group copies keep a reference to the granted lock-table lock
-  (Lock.grantedLock); regrantHeld increments both counts.
-- Why it is exact: LockControl.addLock always grants a re-request from a space
-  that holds the lock (even with waiters queued) and only counts it, and a
-  granted lock's count is written only by its owner. Counts, group release,
-  partial unlocks, transfers and escalation are unchanged.
-- HeldIntentRegrantTestSupport (engine-patch test bridge) and
-  HeldIntentRegrantTest: N requests need N unlocks; no regrant across groups;
-  regrant after transfer; regrant with a queued CX waiter, which is granted
-  when the group is released; indexed inserts hold IX and release it at
-  commit and rollback; escalation to table X mid-transaction;
-  SYSCS_CHECK_TABLE.
+- BTreeController.findInsertLeaf: the root routing snapshot is on by
+  default (-Ddelosdb.btree.insertRootRoutingSnapshot.disabled=true restores
+  the latched-root descent). A missing or changed snapshot falls back to
+  the latched descent, which republishes it. Hit and fallback counters.
+- ControlRow.observe{Root,Branch,Leaf}RoutingSnapshot: a change of snapshot
+  owner invalidates the previous owner's snapshot. One index can have
+  several live BTree instances: each root control row decodes its own, so
+  after the root page is reloaded, logical undo (B2IUndo) and plans
+  compiled after a conglomerate cache miss use a new instance while cached
+  conglomerates and older plans keep the old one. A page change invalidated
+  only the current owner, leaving the other instance routing on stale
+  separators. With inserts routed this way, rows went to leaves that do not
+  cover their keys (index order corruption, or an endless insert/split
+  loop). Keyed reads, which already use the snapshot on main, are exposed to
+  the same mechanism.
+- InsertRootRoutingTestSupport (test bridge) and
+  InsertRootRoutingSnapshotTest: 8 writers inserting shuffled keys into a
+  wide-key index with committed and rolled-back batches, then index order,
+  a point lookup per key and SYSCS_CHECK_TABLE; a second BTree instance
+  forced by page and conglomerate cache pressure, inserting through both
+  plans across splits.
 
 Deliberately unchanged
 ----------------------
-- Lock modes, compatibility, lock-table structure, row and previous-key
-  locking, on-disk format, WAL, recovery
+- Branch routing snapshots (still experimental and off), split and undo
+  paths (canonical latched descent), latch and lock order, on-disk format,
+  WAL, recovery
 
 Qualification
 -------------
 - Embedded insert probe, 8 writers, rare log switch, 3 alternating pairs:
-  BARE 923k vs 755k rows/s (+22%); PK 334k vs 337k; INDEXED 162k vs 161k.
-- HeldIntentRegrantTest 4/4; removing the lock-table count increment fails
-  all four. ContainerIntentSharedFastPathTest, RecordReadFastPathTest,
-  HeapInsertLaneTest pass.
-- derbyStoreTests 429: the same 6 setup failures as main (MemoryLeakFixesTest,
-  XAMemTest, st_derby1189, st_b5772). delosRecoveryTests 57/57.
-- delosConcurrencyTests: DEL-ISO-001, DEL-FK-004 and the task-only
-  F08TransactionStatus test fail as on main. DEL-TRAVERSAL-001 (MVCC
-  delete-after-wait, unexpected 40001) failed intermittently in full-class
-  runs (2 of 5 with the regrant, 0 of 4 without); the isolated method passed
-  24/24 repeat runs (12 per mode). Recorded as an intermittent MVCC race to
-  investigate.
-- RecordReadFastPathTest failed once and passed 4/4 reruns (timing-sensitive;
-  record locks are not touched by this change).
+  PK 369k vs 286k rows/s (+29%); INDEXED 169k vs 149k (+13%); BARE (no
+  index) unaffected within noise.
+- InsertRootRoutingSnapshotTest 8/8 repeat runs plus the suite run. Without
+  the owner invalidation the concurrent test fails with a sanity assert
+  (last row on a left leaf greater than the first row on its right sibling)
+  and the second-instance test loops until its timeout.
+- derbyStoreTests 435/435. delosRecoveryTests 57/57.
+- delosConcurrencyTests 58: DEL-ISO-001, DEL-FK-004 and the task-only
+  F08TransactionStatus test fail as on main; DEL-TRAVERSAL-001 and
+  BTreeIndexConcurrencyArchitectureProofTest pass.
