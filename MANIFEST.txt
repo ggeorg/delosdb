@@ -1,41 +1,26 @@
-DelosDB default log buffer size
-===============================
+DelosDB RawStore concurrent mutation review
+===========================================
 
 Purpose
 -------
-Raise the default log buffer from Derby's 32K to 1M. A 32K buffer holds
-about 40 indexed-table rows, so concurrent writers switched log buffers
-thousands of times a second; each switch computes the buffer checksum and
-may write a dirty buffer while holding the LogToFile monitor, and every
-other writer waits behind it.
+Add the adversarial review of the RawStore concurrent mutation (RCM) design
+and the record of the insert-path work that followed it, revisions 1 to 7.
 
 Changes
 -------
-- LogToFile.defaultLogBufferSize: the default derby.storage.logBufferSize
-  is 1/64 of the maximum heap, between 32K and 1M. Each database allocates
-  three log buffers, so heaps of 64M or more get 1M (3M per database) and
-  small embedded heaps keep a small buffer: with a fixed 1M default,
-  Derby5730Test (memory suite, -Xmx16M, 24 in-memory database boots) failed;
-  with 32K, 64K or 256K it passes. derby.storage.logBufferSize still
-  overrides the default, within the existing 8K minimum.
-- LogBufferSizeTestSupport (test bridge) and LogBufferSizeDefaultTest: the
-  default for this JVM, and for spawned JVMs with -Xmx16m (256K) and
-  -Xmx256m (1M).
+- docs/design/RAWSTORE-CONCURRENT-MUTATION-REVIEW.md: review of
+  RAWSTORE-CONCURRENT-MUTATION.md and RCM-0/1 (sections A-N), the RCM-R0
+  ledger specification and calibration review (O, P), JFR attribution (Q),
+  insert lanes, the cross-engine source comparison and the held-intent
+  regrant (R), insert root routing (S), and revision 7 (T): sane versus
+  insane build profiles, cached page validity, the rejected WAL append
+  window, the log buffer default, and the current plan.
 
 Deliberately unchanged
 ----------------------
-- Log record format, checksums, buffer count, flush and sync behaviour,
-  log switch and checkpoint intervals, the replication log buffer
-  (derby.replication.logBufferSize, which already accepts larger chunks),
-  on-disk format
+- Source code, tests, build
 
 Qualification
 -------------
-- Embedded insert probe, release (insane) build, 8 writers, rare log switch,
-  2M rows, 4 alternating pairs, 1M vs -Dderby.storage.logBufferSize=32768:
-  INDEXED 220k vs 192k rows/s (+15%, 4 of 4 pairs); PK 518k vs 443k (4 of
-  4; +8% without one 297k 32K run); BARE 956k vs 1002k (2 of 4, noise).
-- derbyStoreTests 435/435 (including Derby5730Test); delosRecoveryTests
-  57/57; delosConcurrencyTests 61: DEL-ISO-001, DEL-FK-004 and the task-only
-  F08TransactionStatus test fail as on main.
-- LogBufferSizeDefaultTest 2/2.
+- Documentation only; commit hashes and measurements cited in the document
+  refer to commits on main and to the local experiment branches it names.
