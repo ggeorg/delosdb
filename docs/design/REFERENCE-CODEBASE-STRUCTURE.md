@@ -145,9 +145,9 @@ The objective is an educational reference database that can be understood and fo
 5. **Preserve and prove compatibility.** For each relevant core slice, run focused SQL/storage/concurrency/recovery tests and packaged embedded/DRDA checks. Use reopen/upgrade and generated-activation/resource/security checks when that boundary is affected. Run matched performance comparisons when execution could change; keep workload budgets, durability and measurement conditions explicit and feasible on the laptop.
 6. **Make forks teachable.** Maintain the reading guide and add an executable query trace, a component change recipe and focused build/test commands. A new contributor should know the algorithm's owner, its contracts and the evidence required to modify it.
 
-Completed so far: local reference-engine/source-owner assessment; source guide and compatibility-preserving target structure; occupancy Gradle registration extraction; worker process/command/configuration; shared benchmark model; worker and per-case lifecycles; fixtures/diagnostics; concurrent SQL execution and verification/restoration; legacy experiment families; parent container/host/command/report owners; the core query/storage dependency map and the first core slice (below). Core SQL/RawStore package and module moves have **not** yet started.
+Completed so far: local reference-engine/source-owner assessment; source guide and compatibility-preserving target structure; occupancy Gradle registration extraction; worker process/command/configuration; shared benchmark model; worker and per-case lifecycles; fixtures/diagnostics; concurrent SQL execution and verification/restoration; legacy experiment families; parent container/host/command/report owners. Core SQL/RawStore package and module restructuring has **not** yet started.
 
-The next implementation action, subject to review of its new runtime-api contract, is to separate the lock manager's deadlock and timeout reports from SQL (see "Engine services that depend on SQL" in the dependency map). The compiler and executor stay one owner. Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
+The next implementation action is the core query/storage dependency map and selection of a bounded first component. Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
 
 ## Core query and storage dependency map
 
@@ -195,7 +195,7 @@ The third kind is a real dependency: DDL execution compiles SQL. Moving the cons
 - `reflect` uses one `CodeGeneration` constant.
 - `locks` is the only general kernel service that depends on SQL. `Deadlock` and `Timeout` take the `LanguageConnectionContext` from the context stack to get the current `TransactionController`, and they build `TableNameInfo`, which reads the data dictionary, to name the tables, indexes and statements in deadlock and timeout reports. `diag.LockTable` reuses `TableNameInfo`. The lock algorithm itself has no SQL dependency.
 
-Separating the lock manager from SQL needs a small runtime-api contract for naming lock objects, with `TableNameInfo` moved to the SQL layer. That adds public module surface and must keep the report text unchanged. It is the next candidate slice, waiting for review.
+Separating the lock manager from SQL needs a small runtime-api contract for naming lock objects, with `TableNameInfo` moved to the SQL layer. That adds public module surface and must keep the report text unchanged. This dependency is recorded here as evidence; the execution plan above sets the order of work.
 
 ## First implemented slices
 
