@@ -2619,6 +2619,12 @@ abstract class FileContainer
 			}
 		}
 
+        // Allocation pages have VALID_PAGE status too, but are not user pages.
+        if (page instanceof AllocPage) {
+            pageCache.release((AllocPage) page);
+            return null;
+        }
+
         // latch the page
         if (latchPage(handle,page,wait) == null)
         {

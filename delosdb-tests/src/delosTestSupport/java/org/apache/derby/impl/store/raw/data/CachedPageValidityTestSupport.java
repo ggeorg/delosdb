@@ -23,6 +23,72 @@ public final class CachedPageValidityTestSupport {
     private CachedPageValidityTestSupport() {
     }
 
+    /** Exercise a non-first allocation page with both warm and cold cache. */
+    public static String verifyAllocationPageExclusion(Connection connection) throws Exception {
+        RawTransaction raw = (RawTransaction) ((TransactionManager) ((EmbedConnection) connection)
+                .getLanguageConnection().getTransactionExecute()).getRawStoreXact();
+        CacheManager cache = ((BaseDataFileFactory) raw.getDataFactory()).getPageCache();
+        java.util.Properties properties = new java.util.Properties();
+        properties.setProperty("derby.storage.pageSize", "4096");
+        long id = raw.addContainer(0, ContainerHandle.DEFAULT_ASSIGN_ID,
+                ContainerHandle.MODE_DEFAULT, properties, 0);
+        BaseContainerHandle container = (BaseContainerHandle) raw.openContainer(
+                new ContainerKey(0, id), ContainerHandle.MODE_FORUPDATE);
+        try {
+            long lastUserPage = -1;
+            // A 4K allocation extent manages fewer than 12,000 user pages.
+            for (int i = 0; i < 12_000; i++) {
+                Page page = container.addPage();
+                lastUserPage = page.getPageNumber();
+                page.unlatch();
+            }
+            AllocPage first = (AllocPage) container.getAllocPage(0);
+            long allocationNumber;
+            try { allocationNumber = first.getNextAllocPageNumber(); }
+            finally { first.unlatch(); }
+            if (allocationNumber <= 0) return "second allocation extent was not created";
+            Page allocation = container.getAllocPage(allocationNumber);
+            allocation.unlatch();
+            for (int attempt = 0; attempt < 2; attempt++) {
+                String failure = rejectUserFetch(container, allocationNumber);
+                if (failure != null) return failure;
+            }
+            // Remove the warmed allocation page to exercise the allocation-map path too.
+            PageKey key = new PageKey(container.getId(), allocationNumber);
+            Cacheable cached = cache.findCached(key);
+            if (!(cached instanceof AllocPage)) {
+                if (cached != null) cache.release(cached);
+                return "allocation page was not cached";
+            }
+            cache.remove(cached);
+            String failure = rejectUserFetch(container, allocationNumber);
+            if (failure != null) return failure;
+            allocation = container.getAllocPage(allocationNumber);
+            if (!(allocation instanceof AllocPage)) return "allocation accessor lost its page";
+            allocation.unlatch();
+            Page user = container.getPage(lastUserPage);
+            if (user == null) return "allocated user page was rejected";
+            user.unlatch();
+            return null;
+        } finally {
+            container.close();
+        }
+    }
+
+    private static String rejectUserFetch(BaseContainerHandle container, long number) throws Exception {
+        Page page = container.getPage(number);
+        if (page != null) {
+            page.unlatch();
+            return "getPage returned allocation page " + number;
+        }
+        page = container.getPageNoWait(number);
+        if (page != null) {
+            page.unlatch();
+            return "getPageNoWait returned allocation page " + number;
+        }
+        return null;
+    }
+
     /**
      * In the connection's transaction: create a container, deallocate a page
      * while it stays in the page cache, and fetch it again. Returns null on

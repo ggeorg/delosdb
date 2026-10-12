@@ -36,6 +36,20 @@ public final class CachedPageValidityTest extends MvccSqlTestSupport {
     private static final int BATCH = 40;
     private static final int ID_RANGE = ROUNDS * BATCH;
 
+    public void testAllocationPageIsNotReturnedAsUserPage() throws Exception {
+        String databaseName = databaseName("cached-allocation-page-db");
+        try (Connection connection = openDatabase(databaseName, true)) {
+            connection.setAutoCommit(false);
+            try {
+                assertNull(CachedPageValidityTestSupport.verifyAllocationPageExclusion(connection));
+            } finally {
+                connection.rollback();
+            }
+        } finally {
+            shutdownDatabase(databaseName);
+        }
+    }
+
     public void testDeallocatedCachedPageIsNotReturned() throws Exception {
         String databaseName = databaseName("cached-page-validity-dealloc-db");
         try (Connection connection = openDatabase(databaseName, true)) {

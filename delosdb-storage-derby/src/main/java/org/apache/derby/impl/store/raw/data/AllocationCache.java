@@ -460,6 +460,9 @@ class AllocationCache
 
 		for (int i = 0; i < numExtents; i++)
 		{
+            // An allocation page is outside the user-page ranges it manages.
+            if (pageNumber == extentPageNums[i])
+                return AllocExtent.FREE_PAGE;
 			if (lowRange[i] <= pageNumber && pageNumber <= hiRange[i])
 			{
 				extent = extents[i];
