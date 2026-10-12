@@ -9,6 +9,10 @@ modernization, repository-integrity consolidation, stable selected-plan modeling
 storage-aware `EXPLAIN ANALYZE`, and an executable end-to-end query trace. Public documentation is
 organized around the implemented product architecture, supported behavior, and current limitations.
 
+For studying or forking the real engine, start with the [source guide](docs/SOURCE-GUIDE.md).
+It maps query compilation, execution, transactions, storage and transport to their current owners
+and provides a focused modification/test workflow.
+
 ## Architecture
 
 DelosDB has one SQL, transaction, and durable-storage authority:
@@ -20,9 +24,10 @@ Embedded JDBC or DRDA
     -> generate activation classes
     -> execute result-set operators
     -> coordinate Derby transactions
-    -> access one Derby RawStore
-         -> inherited heap access method
-         -> DelosDB MVCC access method
+    -> use an access method
+         -> inherited heap
+         -> DelosDB MVCC
+    -> persist through the shared Derby RawStore
     -> return JDBC or DRDA results
 ```
 

@@ -13,6 +13,7 @@ manifests.
 | Document | Purpose |
 |---|---|
 | [`PROJECT-STATUS.md`](PROJECT-STATUS.md) | current capabilities, repository metrics, limitations, and remaining work |
+| [`SOURCE-GUIDE.md`](SOURCE-GUIDE.md) | source entry points and a focused fork/learning workflow |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | SQL-to-result, generated-class, transaction, and storage architecture |
 | [`READABLE-ENGINE.md`](READABLE-ENGINE.md) | stable plans, EXPLAIN, EXPLAIN ANALYZE, and the end-to-end trace |
 | [`BUILDING.md`](BUILDING.md) | supported build and verification workflow |
@@ -31,6 +32,7 @@ manifests.
 | [`V1-MODULE-ARCHITECTURE.md`](V1-MODULE-ARCHITECTURE.md) | module and dependency boundaries |
 | [`DELOSDB-SERVER.md`](DELOSDB-SERVER.md) | DRDA server architecture and configuration |
 | [`design/V1-GENERATED-CLASS-ARCHITECTURE.md`](design/V1-GENERATED-CLASS-ARCHITECTURE.md) | JDK 25 activation-generation architecture |
+| [`design/REFERENCE-CODEBASE-STRUCTURE.md`](design/REFERENCE-CODEBASE-STRUCTURE.md) | local database comparison and compatibility-preserving restructuring proposal |
 
 ## Current storage protocols
 
