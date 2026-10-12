@@ -54,7 +54,7 @@ python3 tools/architecture/source_inventory.py \
   --output build/reports/delosdb/architecture-reference/delosdb-source-inventory.json
 ```
 
-This inventories authored source; it does not resolve generated, reflective or service-loader dependencies and it is not a new build gate.
+The inventory reports owner-to-owner imports, package cycles within each owner and imports from contract packages into implementation packages. It covers authored source only: it does not resolve generated, reflective or service-loader dependencies, and it is not a build gate. The current findings are in the dependency map in [REFERENCE-CODEBASE-STRUCTURE.md](design/REFERENCE-CODEBASE-STRUCTURE.md); the tool's own check is `python3 -B -m unittest discover -s tools/architecture`.
 
 ## A small fork exercise
 

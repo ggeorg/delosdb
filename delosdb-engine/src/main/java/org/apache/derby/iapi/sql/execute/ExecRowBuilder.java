@@ -32,7 +32,7 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.iapi.types.DataTypeDescriptor;
 import org.apache.derby.iapi.types.DataValueDescriptor;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.iapi.types.RowLocationServicesRegistry;
 
 /**
  * <p>
@@ -154,8 +154,8 @@ public class ExecRowBuilder implements Formatable {
             return ((DataValueDescriptor) template).getNewNull();
         }
         if (template instanceof StoreRowLocation) {
-            return EngineStoreRowLocationBridge
-                    .requireEngineRowLocation(template)
+            return RowLocationServicesRegistry
+                    .requireRowLocation(template)
                     .getNewNull();
         }
         return ((DataTypeDescriptor) template).getNull();
