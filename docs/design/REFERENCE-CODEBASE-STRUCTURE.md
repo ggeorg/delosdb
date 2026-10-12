@@ -147,7 +147,7 @@ The objective is an educational reference database that can be understood and fo
 
 Completed so far: local reference-engine/source-owner assessment; source guide and compatibility-preserving target structure; occupancy Gradle registration extraction; worker process/command/configuration; shared benchmark model; worker and per-case lifecycles; fixtures/diagnostics; concurrent SQL execution and verification/restoration; legacy experiment families; parent container/host/command/report owners; the core query/storage dependency map and the first core slice (below). Core SQL/RawStore package and module moves have **not** yet started.
 
-The next implementation action is to map the `impl.sql.compile` ↔ `impl.sql.execute` imports by type and choose the first shared model to extract from that implementation cycle (finding 4 of the dependency map). Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
+The next implementation action, subject to review of its new runtime-api contract, is to separate the lock manager's deadlock and timeout reports from SQL (see "Engine services that depend on SQL" in the dependency map). The compiler and executor stay one owner. Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
 
 ## Core query and storage dependency map
 
@@ -179,6 +179,23 @@ Findings:
 - the inherited entry points, which have fixed names.
 
 **Result.** Delos-introduced contract-to-implementation imports in the engine are now zero. The engine cycle is still 30 packages, because `impl.services.storetypes` is reached from `impl.sql.execute` and depends on `iapi.types`, and the inherited edges close that loop. The 48 implementation-side call sites keep using the bridge directly: implementation packages may depend on implementations, and rewriting them would be churn without a boundary gain.
+
+**Compiler and executor imports, by type.** The 30 imports from `impl.sql.compile` into `impl.sql.execute` are mostly plan descriptors that the compiler builds and the executor runs: `ColumnInfo`, `ConstraintInfo`, `FKInfo`, `TriggerInfo`, the `PrivilegeInfo` family, `AggregatorInfo` and `IndexColumnOrder`. The rest are constant-action and execution factories. These descriptors are `Formatable`, and stored plans carry their format ids. The 8 imports in the other direction, all inherited, fall into three kinds:
+
+- **Encoding constants.** `ConstraintDefinitionNode` characteristic defaults, `ColumnDefinitionNode` autoincrement modes and `IntersectOrExceptNode` operator codes.
+- **The `TableName` node as a runtime value.** `SET CONSTRAINTS` and `CREATE SEQUENCE` keep it at execution time.
+- **Real compilation during execution.** `AlterTableConstantAction` re-parses and re-binds trigger SQL when a column is dropped.
+
+The third kind is a real dependency: DDL execution compiles SQL. Moving the constants would therefore not break the cycle, and it would only churn inherited files. This confirms the rule above to keep one SQL compiler and executor owner, so no slice was taken here.
+
+**Engine services that depend on SQL.** These are the prerequisite for the candidate `delosdb-kernel`. `impl.services.cache`, `monitor`, `uuid`, `jce` and `jmx` import no SQL package. Each of the others imports SQL for a specific reason:
+
+- `daemon` is the index-statistics daemon, which is SQL work by nature.
+- `storetypes` adapts store values to SQL types by design.
+- `reflect` uses one `CodeGeneration` constant.
+- `locks` is the only general kernel service that depends on SQL. `Deadlock` and `Timeout` take the `LanguageConnectionContext` from the context stack to get the current `TransactionController`, and they build `TableNameInfo`, which reads the data dictionary, to name the tables, indexes and statements in deadlock and timeout reports. `diag.LockTable` reuses `TableNameInfo`. The lock algorithm itself has no SQL dependency.
+
+Separating the lock manager from SQL needs a small runtime-api contract for naming lock objects, with `TableNameInfo` moved to the SQL layer. That adds public module surface and must keep the report text unchanged. It is the next candidate slice, waiting for review.
 
 ## First implemented slices
 
