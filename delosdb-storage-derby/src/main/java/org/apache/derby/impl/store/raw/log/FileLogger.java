@@ -327,8 +327,11 @@ public class FileLogger implements Logger {
 
 				if ((operation.group() & (Loggable.FIRST | Loggable.LAST)) != 0)
 				{
-					synchronized (logFactory)
+					logFactory.occupancyWait();
+                    synchronized (logFactory)
 					{
+                        logFactory.occupancyAcquired();
+                        try {
 						long instant = 0;
 
 						if (logFactory.databaseEncrypted())
@@ -351,7 +354,11 @@ public class FileLogger implements Logger {
 						logInstant = new LogCounter(instant);
 
 						operation.doMe(xact, logInstant, logIn);
-					}
+
+                        } finally {
+                            logFactory.occupancyReleased();
+                        }
+                    }
 				}
 				else
 				{

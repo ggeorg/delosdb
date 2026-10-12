@@ -655,6 +655,24 @@ def registerDelosFocusedTest = { String taskName,
 
 
 registerDelosFocusedTest(
+        'runDelosRawStoreOccupancyEnabled',
+        'Qualifies concurrent RawStore ownership accounting with the ledger enabled.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreOccupancyTest.class'],
+        ['delosdb.diagnostic.rawStoreOccupancy.enabled': 'true',
+         'delosdb.diagnostic.rawStoreOccupancy.sampleEvery': '1'])
+registerDelosFocusedTest(
+        'runDelosRawStoreOccupancySampled',
+        'Qualifies sampled ownership episodes without mixing partial nested intervals.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreOccupancyTest.class'],
+        ['delosdb.diagnostic.rawStoreOccupancy.enabled': 'true',
+         'delosdb.diagnostic.rawStoreOccupancy.sampleEvery': '32'])
+registerDelosFocusedTest(
+        'runDelosRawStoreOccupancyDisabled',
+        'Qualifies unchanged insert behavior and an empty disabled ledger.',
+        ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreOccupancyTest.class'],
+        ['delosdb.diagnostic.rawStoreOccupancy.enabled': 'false'])
+
+registerDelosFocusedTest(
         'runDelosRawStoreConcurrentMutationPreparedInsert',
         'Runs the RCM-0/1 prepared-insert equivalence, transaction, and crash-recovery proof.',
         ['org/apache/derbyTesting/functionTests/tests/delos/RawStoreConcurrentMutationPreparedInsertTest.class'],
@@ -1636,6 +1654,10 @@ registerDelosFocusedTest(
                 'delosdb.benchmark.transactions.runs': providers.gradleProperty('delosdb.benchmark.transactions.runs').getOrElse('2')
         ])
 
+
+apply from: rootProject.file('gradle/benchmarks/rawstore-occupancy.gradle')
+project.ext.registerRawStoreOccupancyCampaign.call(
+        derbyTestsClassDir, derbyRuntimeJars, upstreamDerbyBenchmarkRuntime)
 
 tasks.register('runDelosJdbcCrossEngineConcurrencyComparison', JavaExec) {
     group = 'benchmark'

@@ -21,6 +21,8 @@
 
 package org.apache.derby.impl.store.access.heap;
 
+import org.apache.derby.impl.store.raw.data.RawStoreOccupancy;
+
 import java.util.List;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -304,6 +306,7 @@ public class HeapController
         }
 
         page = open_conglom.getContainer().addPage();
+        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.classify(page, RawStoreOccupancy.HEAP);
 
         // At this point with long rows the raw store will guarantee
         // that any size row will fit on an empty page.

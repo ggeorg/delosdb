@@ -127,6 +127,11 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length == 1 && "occupancy-contract".equals(args[0])) {
+            Options.fromSystemProperties().validate();
+            System.out.println("F08 occupancy configuration validated; no measurement executed.");
+            return;
+        }
         if (args.length == 1 && "phase2a-f05-join-decomposition".equals(args[0])) {
             runPhase2AF05JoinDecomposition();
             return;
@@ -5336,6 +5341,19 @@ public final class DelosJdbcCrossEngineConcurrency {
         command.add("-Xms" + options.childHeap());
         command.add("-Xmx" + options.childHeap());
         command.add("-XX:+AlwaysPreTouch");
+        RawStoreStabilityDiagnostics.awaitQuietHost(options.reportDirectory(), target.id(), run);
+        RawStoreStabilityDiagnostics.configureWorker(command, options.reportDirectory(), target.id(), run);
+        if (RawStoreOccupancyBenchmark.campaign()) {
+            addProperty(command, "rawStoreOccupancyCampaign", true);
+            boolean occupancy = RawStoreOccupancyBenchmark.enabledForRun(run,
+                    System.getProperty(PREFIX + "rawStoreOccupancyEnabled", "false"));
+            addProperty(command, "rawStoreOccupancyMode", occupancy);
+            if (target == Target.DELOS_HEAP && occupancy) {
+                command.add("-Ddelosdb.diagnostic.rawStoreOccupancy.enabled=true");
+                command.add("-Ddelosdb.diagnostic.rawStoreOccupancy.sampleEvery="
+                        + System.getProperty(PREFIX + "rawStoreOccupancySampleEvery", "32"));
+            }
+        }
         if (target == Target.DELOS_HEAP
                 && Boolean.getBoolean("delosdb.experimental.heapPageReadImage")) {
             command.add("-Ddelosdb.experimental.heapPageReadImage=true");
@@ -5556,45 +5574,12 @@ public final class DelosJdbcCrossEngineConcurrency {
 
         Path log = options.reportDirectory().resolve("logs")
                 .resolve(String.format(Locale.ROOT, "%02d-%s.log", run, target.id()));
-        Process process = new ProcessBuilder(command)
-                .directory(options.projectDirectory().toFile())
-                .redirectErrorStream(true)
-                .redirectOutput(log.toFile())
-                .start();
-        Thread hostSampler = hostProcessDiagnosticsEnabled()
-                ? startHostProcessSampler(options, target, run, process)
-                : null;
-        boolean completed;
-        try {
-            completed = options.workerTimeoutSeconds() == 0
-                    ? waitForUnbounded(process)
-                    : process.waitFor(options.workerTimeoutSeconds(), TimeUnit.SECONDS);
-            if (!completed) {
-                process.destroy();
-                if (!process.waitFor(5, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    process.waitFor(10, TimeUnit.SECONDS);
-                }
-                throw new IllegalStateException("Concurrency worker timed out: target=" + target.id()
-                        + ", run=" + run + ", workerTimeoutSeconds=" + options.workerTimeoutSeconds()
-                        + ", log=" + log);
-            }
-        } finally {
-            stopHostProcessSampler(hostSampler);
-        }
-        int status = process.exitValue();
-        if (status != 0) {
-            List<String> lines = Files.exists(log) ? Files.readAllLines(log) : List.of();
-            int from = Math.max(0, lines.size() - 40);
-            throw new IllegalStateException("Concurrency worker failed: target=" + target.id()
-                    + ", run=" + run + ", exit=" + status + ", log=" + log
-                    + (lines.isEmpty() ? "" : "\n" + String.join("\n", lines.subList(from, lines.size()))));
-        }
-    }
-
-    private static boolean waitForUnbounded(Process process) throws InterruptedException {
-        process.waitFor();
-        return true;
+        new BenchmarkWorkerProcess(command, options.projectDirectory(), log,
+                options.workerTimeoutSeconds(), target.id(), run).execute(process -> {
+                    Thread sampler = hostProcessDiagnosticsEnabled()
+                            ? startHostProcessSampler(options, target, run, process) : null;
+                    return () -> stopHostProcessSampler(sampler);
+                });
     }
 
     private static boolean shouldProfileWorker(Target target) {
@@ -6121,6 +6106,7 @@ public final class DelosJdbcCrossEngineConcurrency {
     }
 
     private static void runWorker(Options options) throws Exception {
+        RawStoreStabilityDiagnostics.initialize();
         Files.createDirectories(options.reportDirectory());
         List<Measurement> measurements = new ArrayList<>();
         List<OracleEvidence> oracleEvidence = new ArrayList<>();
@@ -6743,11 +6729,12 @@ public final class DelosJdbcCrossEngineConcurrency {
         try {
             boolean mac = System.getProperty("os.name", "")
                     .toLowerCase(Locale.ROOT).contains("mac");
+            String executable = RawStoreStabilityDiagnostics.enabled() ? "comm=" : "command=";
             List<String> command = mac
                     ? List.of("ps", "-A", "-r", "-o",
-                            "pid=,ppid=,%cpu=,%mem=,state=,etime=,command=")
+                            "pid=,ppid=,%cpu=,%mem=,state=,etime=," + executable)
                     : List.of("ps", "-eo",
-                            "pid=,ppid=,%cpu=,%mem=,stat=,etime=,command=", "--sort=-%cpu");
+                            "pid=,ppid=,%cpu=,%mem=,stat=,etime=," + executable, "--sort=-%cpu");
             CommandResult result = runCommand(5, command);
             if (result.exitCode() != 0) {
                 return "exit=" + result.exitCode() + " " + result.output().trim();
@@ -8100,7 +8087,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 resetDrdaProtocolEvidence();
                 beginDrdaProtocolTimingWindow();
             }
+            RawStoreOccupancyBenchmark.reset();
             long started = System.nanoTime();
+            RawStoreStabilityDiagnostics.markStart(started);
             long deadline = started + TimeUnit.SECONDS.toNanos(options.caseTimeoutSeconds());
             long executionFingerprint = 1L;
             long retryableRollbacks = 0L;
@@ -8135,6 +8124,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                 cancelFutures(futures);
                 throwFailure(failure);
             }
+            RawStoreOccupancyBenchmark.write(options.reportDirectory(), options.target().id(),
+                    spec.clients(), options.run(), transactionsPerClient,
+                    spec.operationsPerTransaction(), elapsed);
             long[] protocolEvidence = snapshotDrdaProtocolEvidence();
             Verification verification = verifyAndRestore(captureSqlOracle);
             return new Interval(
@@ -13642,7 +13634,9 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !drdaServerPhaseDiagnostic
                     && !f04DrdaRowAdvanceJfrDiagnostic
                     && !f04FanoutJfrDiagnostic
-                    && !currentBaselineTargets) {
+                    && !currentBaselineTargets
+                    && !(RawStoreOccupancyBenchmark.campaign()
+                            && configuredTargets.equals(List.of(Target.DELOS_HEAP, Target.UPSTREAM_DERBY)))) {
                 throw new IllegalArgumentException("coordinator targets must be exactly " + embedded + ", "
                         + container + ", embedded reference canary " + EMBEDDED_REFERENCE_CANARY_TARGETS
                         + ", server reference canary " + SERVER_REFERENCE_CANARY_TARGETS
@@ -13673,6 +13667,11 @@ public final class DelosJdbcCrossEngineConcurrency {
             parsePositive(widths, "widths", 1);
             List<Workload> configuredWorkloads = workloadValues();
             String configuredInsertTableShape = insertTableShape();
+            if (RawStoreOccupancyBenchmark.campaign()) {
+                RawStoreOccupancyBenchmark.validate(configuredTargets.stream()
+                        .map(Target::id).toList(), clientValues(), configuredWorkloads.stream()
+                        .map(Enum::name).toList(), configuredInsertTableShape, warmups, iterations);
+            }
             if (!List.of("BARE", "PRIMARY_KEY_ONLY", "FULL_INDEXED")
                     .contains(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
@@ -14118,7 +14117,7 @@ public final class DelosJdbcCrossEngineConcurrency {
                     throw new IllegalArgumentException(
                             "Gen2-B throughput sentinel requires PRIMARY_KEY_ONLY INSERT table shape");
                 }
-            } else if (!f02ScaleSurfaceDiagnostic
+            } else if (!f02ScaleSurfaceDiagnostic && !RawStoreOccupancyBenchmark.campaign()
                     && !"FULL_INDEXED".equals(configuredInsertTableShape)) {
                 throw new IllegalArgumentException(
                         "Non-default INSERT table shapes require mutationSchemaAttribution=true, "
@@ -14201,7 +14200,8 @@ public final class DelosJdbcCrossEngineConcurrency {
                     && !f02EmbeddedConcurrencyDiagnostic && !f04DrdaServerPhaseDiagnostic
                     && !f04DrdaRowAdvanceJfrDiagnostic && !f04FanoutJfrDiagnostic
                     && !f07DrdaServerPhaseDiagnostic
-                    && !hostStateDiagnosticsEnabled() && !clientValues().contains(1)) {
+                    && !hostStateDiagnosticsEnabled() && !RawStoreOccupancyBenchmark.campaign()
+                    && !clientValues().contains(1)) {
                 throw new IllegalArgumentException("clients must include 1 for scaling ratios");
             }
             if (transactionsPerClient < 1 || fixedWorkloadOperationBudgetPerClient < 0

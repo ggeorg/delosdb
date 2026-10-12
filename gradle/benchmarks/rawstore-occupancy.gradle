@@ -1,0 +1,73 @@
+// RawStore occupancy campaign registration. The owning test project supplies
+// its classes and both runtime classpaths; reference engines resolve only when
+// this opt-in task executes.
+ext.registerRawStoreOccupancyCampaign = {
+    derbyTestsClassDir, derbyRuntimeJars, upstreamDerbyBenchmarkRuntime ->
+    tasks.register('runDelosF08OccupancyCampaign', JavaExec) {
+        group = 'benchmark'
+        description = 'Runs only fresh embedded F08 BARE or PK INSERT_100 at 4/8 clients, with occupancy calibration.'
+        dependsOn tasks.named('compileTestJava'), ':jars'
+        mainClass = 'io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency'
+        classpath = rootProject.files(derbyTestsClassDir)
+        outputs.upToDateWhen { false }
+        doFirst {
+            if (providers.gradleProperty('delosdb.sane').getOrElse('true') != 'false') {
+                throw new GradleException('Occupancy measurement requires -Pdelosdb.sane=false')
+            }
+            def shape = providers.gradleProperty('delosdb.occupancy.shape').getOrElse('BARE')
+            def enabled = providers.gradleProperty('delosdb.occupancy.enabled').getOrElse('false')
+            if (!(shape in ['BARE', 'PRIMARY_KEY_ONLY']) || !(enabled in ['true', 'false', 'paired'])) {
+                throw new GradleException('Occupancy shape must be BARE/PRIMARY_KEY_ONLY and enabled must be true/false/paired')
+            }
+            if (providers.gradleProperty('delosdb.occupancy.validateOnly').getOrElse('false') == 'true') {
+                args 'occupancy-contract'
+            }
+            def tag = providers.gradleProperty('delosdb.occupancy.reportTag').getOrElse('sampled')
+            if (!(tag ==~ /[a-z0-9-]{1,48}/)) {
+                throw new GradleException('Occupancy reportTag must use 1..48 lowercase letters, digits or hyphens')
+            }
+            def stability = providers.gradleProperty('delosdb.occupancy.stabilityDiagnostics').getOrElse('false')
+            if (stability == 'true' && (shape != 'BARE' || enabled != 'false'
+                    || providers.gradleProperty('delosdb.occupancy.clients').getOrElse('4,8') != '4')) {
+                throw new GradleException('Stability diagnostic requires BARE, ledger OFF and exactly 4 clients')
+            }
+            def reportRoot = rootProject.layout.buildDirectory
+                    .dir("reports/delosdb/benchmarks/f08-occupancy-${tag}/${shape}/${enabled}").get().asFile
+            systemProperties([
+                    'delosdb.benchmark.crossEngineConcurrency.sane': 'false',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreOccupancyCampaign': 'true',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreOccupancyEnabled': enabled,
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreStabilityDiagnostics': stability,
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreQuietGuard': providers.gradleProperty('delosdb.occupancy.quietGuard').getOrElse('false'),
+                    'delosdb.benchmark.crossEngineConcurrency.hostStateDiagnostics': stability,
+                    'delosdb.benchmark.crossEngineConcurrency.hostProcessDiagnostics': stability,
+                    'delosdb.benchmark.crossEngineConcurrency.hostProcessSampleSeconds': '2',
+                    'delosdb.benchmark.crossEngineConcurrency.rawStoreOccupancySampleEvery': providers.gradleProperty('delosdb.occupancy.sampleEvery').getOrElse('32'),
+                    'delosdb.benchmark.crossEngineConcurrency.projectDirectory': rootProject.projectDir.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.javaExecutable': new File(System.getProperty('java.home'), 'bin/java').absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.benchmarkClasses': derbyTestsClassDir.get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.delosClasspath': rootProject.files(derbyRuntimeJars).asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.upstreamDerbyClasspath': upstreamDerbyBenchmarkRuntime.asPath,
+                    'delosdb.benchmark.crossEngineConcurrency.targets': 'delos_heap,upstream_derby',
+                    'delosdb.benchmark.crossEngineConcurrency.databaseRoot': rootProject.layout.buildDirectory
+                            .dir("tmp/delos-f08-occupancy-${tag}/${shape}/${enabled}").get().asFile.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.reportDirectory': reportRoot.absolutePath,
+                    'delosdb.benchmark.crossEngineConcurrency.rows': '10000',
+                    'delosdb.benchmark.crossEngineConcurrency.clients': providers.gradleProperty('delosdb.occupancy.clients').getOrElse('4,8'),
+                    'delosdb.benchmark.crossEngineConcurrency.widths': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.workloads': 'INSERT_100',
+                    'delosdb.benchmark.crossEngineConcurrency.insertTableShape': shape,
+                    'delosdb.benchmark.crossEngineConcurrency.transactionsPerClient': '2500',
+                    'delosdb.benchmark.crossEngineConcurrency.payload': '128',
+                    'delosdb.benchmark.crossEngineConcurrency.fixtureBatch': '100',
+                    'delosdb.benchmark.crossEngineConcurrency.warmups': '0',
+                    'delosdb.benchmark.crossEngineConcurrency.iterations': '1',
+                    'delosdb.benchmark.crossEngineConcurrency.runs': enabled == 'paired' ? '8' : '4',
+                    'delosdb.benchmark.crossEngineConcurrency.caseTimeoutSeconds': '600',
+                    'delosdb.benchmark.crossEngineConcurrency.workerTimeoutSeconds': '1800',
+                    'delosdb.benchmark.crossEngineConcurrency.childHeap': '1g'
+            ])
+        }
+    }
+
+}

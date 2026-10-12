@@ -123,6 +123,7 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		MT - immutable - content dynamic : single thread required
 	*/
 	protected PageKey identity;
+    private RawStoreOccupancy.Resource occupancyResource;
 
 	/**
 		In-memory slot table, array of StoredRecordHeaders.
@@ -301,6 +302,10 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		}
 
 		identity = key;
+        if (RawStoreOccupancy.ENABLED) {
+            occupancyResource = RawStoreOccupancy.resource("PAGE:" + key
+                    + ":store:" + System.identityHashCode(((CachedPage) this).dataFactory));
+        }
         repositionNeededAfterVersion = pageVersion;
 	}
 
@@ -1839,6 +1844,9 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 	*/
 	void setExclusive(BaseContainerHandle requester)
 		throws StandardException {
+        long occupancyStarted = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.pageWait() : 0L;
+        boolean occupancyAcquired = false;
+        try {
 
         if (PAGE_LATCH_DIAGNOSTICS) {
             PAGE_LATCH_REQUESTS.increment();
@@ -1870,6 +1878,10 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 				if (t.inAbort()) {
 					//
 					nestedLatch++;
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.pageCancelled();
+                        occupancyAcquired = true;
+                    }
 					return;
 				}
 
@@ -1885,7 +1897,8 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 
             waitForExclusiveOwnerRelease();
 
-			preLatch(requester);
+			occupancyAcquired = true;
+                preLatch(requester, occupancyStarted);
 
 			// latch granted, but cleaner may "own" the page.
 
@@ -1901,6 +1914,22 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
             // Previously we would wait in lockEvent, but that caused the code 
             // to block on I/O while holding the locking system monitor.
 
+            waitForExclusiveCleaner();
+
+            // no clean taking place, so safe to move to full LATCHED state.
+            preLatch = false;
+        }
+
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED && !occupancyAcquired) {
+                RawStoreOccupancy.pageFailed(occupancyResource, occupancyStarted);
+            }
+        }
+}
+
+    /** Caller owns this page monitor and the PRELATCH resource. */
+    private void waitForExclusiveCleaner() {
             long cleanerWaitStarted = 0L;
             if (PAGE_LATCH_DIAGNOSTICS && inClean) {
                 cleanerWaitStarted = System.nanoTime();
@@ -1924,11 +1953,7 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
                 PAGE_LATCH_CLEANER_WAIT_NANOS.add(System.nanoTime() - cleanerWaitStarted);
             }
 
-            // no clean taking place, so safe to move to full LATCHED state.
-            preLatch = false;
-        }
-
-	}
+    }
 
 	/**
 		Get an exclusive latch on the page, but only if I don't have to wait.
@@ -1936,6 +1961,9 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		MT - thread safe
 	*/
 	boolean setExclusiveNoWait(BaseContainerHandle requester) throws StandardException {
+        long occupancyStarted = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.pageWait() : 0L;
+        boolean occupancyAcquired = false;
+        try {
 
         if (PAGE_LATCH_DIAGNOSTICS) {
             PAGE_LATCH_NO_WAIT_REQUESTS.increment();
@@ -1951,6 +1979,10 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 				if (t.inAbort()) {
 					//
 					nestedLatch++;
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.pageCancelled();
+                        occupancyAcquired = true;
+                    }
 					return true;
 				}
 			}
@@ -1958,7 +1990,8 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 			// Pre-latch the page if no one already has latched it or requested
 			// a latch. Otherwise, give up and return false.
 			if (owner == null) {
-				preLatch(requester);
+				occupancyAcquired = true;
+                preLatch(requester, occupancyStarted);
 			} else {
                 if (PAGE_LATCH_DIAGNOSTICS) {
                     PAGE_LATCH_NO_WAIT_FAILURES.increment();
@@ -1999,7 +2032,13 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		}
 
 		return true;
-	}
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED && !occupancyAcquired) {
+                RawStoreOccupancy.pageFailed(occupancyResource, occupancyStarted);
+            }
+        }
+}
 
 	/**
 		Release the exclusive latch on the page.
@@ -2022,7 +2061,8 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 		}
 
 		owner.deleteObserver(this);
-		owner = null;
+		if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.pageReleased(this);
+        owner = null;
 		notifyAll();
 	}
 
@@ -2032,12 +2072,15 @@ abstract class BasePage implements Page, DerbyObserver, TypedFormat
 	 *
 	 * @param requester handle to the container requesting ownership
 	 */
-	private void preLatch(BaseContainerHandle requester) {
+	private void preLatch(BaseContainerHandle requester, long occupancyStarted) {
 		if (SanityManager.DEBUG) {
 			SanityManager.ASSERT(!isLatched(),
 								 "Attempted to pre-latch a latched page");
 		}
 		owner = requester;
+        if (RawStoreOccupancy.ENABLED) {
+            RawStoreOccupancy.pageAcquired(this, occupancyResource, occupancyStarted);
+        }
 		// make sure the latch is released if the container is closed
 		requester.addObserver(this);
 		preLatch = true;

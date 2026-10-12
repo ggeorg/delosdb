@@ -22,6 +22,7 @@
 package org.apache.derby.impl.store.access.btree;
 
 
+import org.apache.derby.impl.store.raw.data.RawStoreOccupancy;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
@@ -825,6 +826,11 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 	public static ControlRow get(ContainerHandle container, long pageNumber)
 		throws StandardException
 	{
+        int occupancyRole = RawStoreOccupancy.ENABLED
+                ? RawStoreOccupancy.requestRole(pageNumber == BTree.ROOTPAGEID
+                        ? RawStoreOccupancy.ROOT : RawStoreOccupancy.OTHER) : 0;
+        try {
+
         if (SanityManager.DEBUG)
         {
             SanityManager.ASSERT(container != null, 
@@ -844,7 +850,11 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 
 		// Return the corresponding control row.
 		return getControlRowForPage(container, page);
-	}
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.requestRole(occupancyRole);
+        }
+}
 
 	/**
 	Get the control row for the given page if the latch on the
@@ -879,7 +889,7 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 		// If so, just use the cached control row.
 		AuxObject auxobject = page.getAuxObject();
 		if (auxobject != null)
-			return (ControlRow) auxobject;
+			return classifyOccupancy((ControlRow) auxobject);
 
         if (SanityManager.DEBUG)
             SanityManager.ASSERT(page.recordCount() >= 1);
@@ -913,8 +923,20 @@ public abstract class ControlRow implements AuxObject, TypedFormat
         // cache this Control row with the page in the cache.
 		page.setAuxObject(cr);
 
-        return(cr);
+        return classifyOccupancy(cr);
 	}
+
+    private static ControlRow classifyOccupancy(ControlRow control) throws StandardException {
+        if (RawStoreOccupancy.ENABLED) {
+            RawStoreOccupancy.classify(control.page,
+                    control.page.getPageNumber() == BTree.ROOTPAGEID ? RawStoreOccupancy.ROOT
+                    : control instanceof LeafControlRow ? RawStoreOccupancy.LEAF : RawStoreOccupancy.BRANCH);
+            if (control.page.getPageNumber() == BTree.ROOTPAGEID && control.level != null) {
+                RawStoreOccupancy.treeHeight(control.page, StoreTypeUtil.getLong(control.level) + 1);
+            }
+        }
+        return control;
+    }
 
 	/**
 	Release this control row's resources.

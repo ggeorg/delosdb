@@ -278,6 +278,7 @@ abstract class FileContainer
 		</PRE>
 	*/
 	protected AllocationCache	allocCache;
+    private RawStoreOccupancy.Resource occupancyAllocation;
 
 	/*
 	 * array to store persistently stored fields
@@ -358,11 +359,21 @@ abstract class FileContainer
             throws StandardException
     {
         SpaceInformation spaceInfo;
-        synchronized(allocCache)
+        long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
         {
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
             spaceInfo = 
                 allocCache.getAllPageCounts(handle,firstAllocPageNumber);
-        }
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
         spaceInfo.setPageSize(pageSize);
         return spaceInfo;
     }
@@ -782,6 +793,10 @@ abstract class FileContainer
 			allocCache = new AllocationCache();
 		else
 			allocCache.reset();
+        if (RawStoreOccupancy.ENABLED) {
+            occupancyAllocation = RawStoreOccupancy.resource("ALLOC:"
+                    + System.identityHashCode(allocCache));
+        }
 
 		if (changeContainer)
 		{
@@ -1354,8 +1369,12 @@ abstract class FileContainer
 	private void deallocatePagenum(BaseContainerHandle handle, long pnum)
 		 throws StandardException
 	{
-		synchronized(allocCache)
+		long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 		{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
 			long allocPageNum = allocCache.getAllocPageNumber(handle, pnum, firstAllocPageNumber);
 
 			if (SanityManager.DEBUG)
@@ -1390,7 +1409,13 @@ abstract class FileContainer
 			{
 				allocPage.unlatch();
 			}
-		}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 		// make sure this page gets looked at when someone needs a new page
 		if (pnum <= lastAllocatedPage) 
 		{
@@ -1486,8 +1511,12 @@ abstract class FileContainer
 
 		try
 		{
+            long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
             synchronized(allocCache)
             {
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
                 // loop until last 2 alloc pages are reached.
                 alloc_page = (AllocPage) 
                     allocHandle.getAllocPage(firstAllocPageNumber);
@@ -1524,6 +1553,12 @@ abstract class FileContainer
 
 
                 alloc_page.compress(ntt, this);
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
             }
 
 		}
@@ -1667,8 +1702,12 @@ abstract class FileContainer
 			{
 				retry = false;		// we don't expect we need to retry
 
-				synchronized(allocCache)
+				long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 				{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
 					if (SanityManager.DEBUG)
 					{
 						SanityManager.ASSERT(
@@ -1758,7 +1797,13 @@ abstract class FileContainer
 
 
 					allocCache.invalidate(allocPage, allocPage.getPageNumber());
-				}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 
 				if (SanityManager.DEBUG)
 				{
@@ -2141,7 +2186,11 @@ abstract class FileContainer
 
         do {
             done = true;
+            long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
             synchronized(allocCache) {
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
                 try {
                     if (pagenum <= allocCache.getLastPageNumber(
                                 handle, firstAllocPageNumber) &&
@@ -2176,6 +2225,12 @@ abstract class FileContainer
                             SQLState.FILE_IO_INTERRUPTED, e);
                     }
                 }
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
             }
         } while (!done);
 
@@ -2186,8 +2241,12 @@ abstract class FileContainer
         throws StandardException
 	{
 		long retval;
-		synchronized(allocCache)
+		long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 		{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
             // check if the first alloc page number is valid, it is invalid 
             // if some one attempts to access the container info before the 
             // first alloc page got created. One such case is online backup. 
@@ -2205,7 +2264,13 @@ abstract class FileContainer
                 retval = 
                     allocCache.getLastPageNumber(handle, firstAllocPageNumber);
             }
-		}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 		return retval;
 	}
 
@@ -2687,10 +2752,20 @@ abstract class FileContainer
 			return null;
 
 		// make sure alloc cache has no stale info
-		synchronized(allocCache)
+		long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 		{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
 			allocCache.invalidate();
-		}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 		
 		PageKey pageSearch = new PageKey(identity, pageNumber);
 		BasePage page = (BasePage) pageCache.find(pageSearch);
@@ -2926,11 +3001,21 @@ abstract class FileContainer
 
 		while(true)
 		{
-			synchronized(allocCache)
+			long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 			{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
 				// ask the cache for the next pagenumber
 				nextNumber = allocCache.getNextValidPage(handle, pageNumber, firstAllocPageNumber);
-			}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 
 			if (nextNumber == ContainerHandle.INVALID_PAGE_NUMBER)
 				return null;
@@ -3092,6 +3177,25 @@ abstract class FileContainer
 										int flag)
 		 throws StandardException
 	{
+        int occupancyRole = RawStoreOccupancy.ENABLED
+                ? RawStoreOccupancy.requestRole(RawStoreOccupancy.HEAP) : 0;
+        boolean occupancyTarget = RawStoreOccupancy.ENABLED
+                && RawStoreOccupancy.requestTarget((flag & ContainerHandle.GET_PAGE_UNFILLED) == 0);
+        try {
+
+            return getInsertPageCandidate(handle, flag);
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED) {
+                RawStoreOccupancy.requestRole(occupancyRole);
+                RawStoreOccupancy.requestTarget(occupancyTarget);
+            }
+        }
+}
+
+    private BasePage getInsertPageCandidate(BaseContainerHandle handle, int flag)
+            throws StandardException {
+
 		BasePage p = null;
 		boolean getLastInserted = (flag & ContainerHandle.GET_PAGE_UNFILLED) == 0;
 
@@ -3151,7 +3255,8 @@ abstract class FileContainer
 
 		return p;
 
-	}
+
+    }
 
     private BasePage getUnfilledInsertPage(BaseContainerHandle handle)
             throws StandardException {
@@ -3236,11 +3341,21 @@ abstract class FileContainer
 	private long getUnfilledPageNumber(BaseContainerHandle handle, long pagenum)
 		 throws StandardException
 	{
-		synchronized(allocCache)
+		long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 		{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
 			return allocCache.
 				getUnfilledPageNumber(handle, firstAllocPageNumber, pagenum);
-		}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 	}		
 
 	/*
@@ -3306,11 +3421,21 @@ abstract class FileContainer
 
 		if (estimatedPageCount < 0)
 		{
-			synchronized(allocCache)
+			long occupancyWait = RawStoreOccupancy.ENABLED ? RawStoreOccupancy.allocWait() : 0L;
+            synchronized(allocCache)
 			{
+                long occupancyHold = RawStoreOccupancy.ENABLED
+                        ? RawStoreOccupancy.allocAcquired(occupancyAllocation, occupancyWait) : 0L;
+                try {
 				estimatedPageCount = 
 					allocCache.getEstimatedPageCount(handle, firstAllocPageNumber);
-			}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) {
+                        RawStoreOccupancy.allocReleased(occupancyAllocation, occupancyHold);
+                    }
+                }
+            }
 		}
 
 		if (SanityManager.DEBUG)

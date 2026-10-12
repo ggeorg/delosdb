@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.store.raw.log;
 
+import org.apache.derby.impl.store.raw.data.RawStoreOccupancy;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
@@ -495,6 +496,10 @@ public class LogAccessFile
      **/
 	protected void flushDirtyBuffers() throws IOException 
     {
+        int occupancyPhase = RawStoreOccupancy.ENABLED
+                ? RawStoreOccupancy.phase(RawStoreOccupancy.DIRTY_FLUSH) : 0;
+        try {
+
         LogAccessFileBuffer buf = null;
 		int noOfBuffers;
 		int nFlushed= 0;
@@ -559,7 +564,11 @@ public class LogAccessFile
 				notifyAll();
 			}
 		}
-	}
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.phase(occupancyPhase);
+        }
+}
 
 
 	//flush all the the dirty buffers to disk
@@ -580,6 +589,10 @@ public class LogAccessFile
 	 */
 	public void switchLogBuffer() throws IOException, StandardException  
     {
+        int occupancyPhase = RawStoreOccupancy.ENABLED
+                ? RawStoreOccupancy.phase(RawStoreOccupancy.SWITCH_BUFFER) : 0;
+        try {
+
 
 		synchronized(this)
 		{
@@ -626,7 +639,11 @@ public class LogAccessFile
                 SanityManager.ASSERT(currentBuffer.bytes_free > 0);
 			}
 		}
-	}
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.phase(occupancyPhase);
+        }
+}
 
 
     /**

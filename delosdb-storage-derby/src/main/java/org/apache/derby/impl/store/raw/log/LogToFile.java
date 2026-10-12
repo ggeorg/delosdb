@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.store.raw.log;
 
+import org.apache.derby.impl.store.raw.data.RawStoreOccupancy;
 import org.apache.derby.iapi.services.diag.Performance;
 
 import org.apache.derby.shared.common.info.ProductVersionHolder;
@@ -207,6 +208,22 @@ import java.util.zip.CRC32;
 public final class LogToFile implements LogFactory, ModuleControl, ModuleSupportable,
 								  Serviceable
 {
+    private final RawStoreOccupancy.Resource occupancyLog = RawStoreOccupancy.ENABLED
+            ? RawStoreOccupancy.resource("LOG:" + System.identityHashCode(this)) : null;
+
+    public void occupancyWait() {
+        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logWait(occupancyLog);
+    }
+
+    public void occupancyAcquired() {
+        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logAcquired();
+    }
+
+    public void occupancyReleased() {
+        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logReleased();
+    }
+
+
 
 	private static final    long INT_LENGTH = 4L;
 
@@ -1595,7 +1612,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
                         {
                             try
                             {
-                                wait();
+                                if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logSuspend();
+                    try { wait(); } finally {
+                        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logResume();
+                    }
                             }	
                             catch (InterruptedException ie)
                             {
@@ -1992,6 +2012,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 	*/
 	public void switchLogFile() throws StandardException
 	{
+        int occupancyPhase = RawStoreOccupancy.ENABLED
+                ? RawStoreOccupancy.phase(RawStoreOccupancy.SWITCH_FILE) : 0;
+        try {
+
 		boolean switchedOver = false;
 
 		/////////////////////////////////////////////////////
@@ -2017,7 +2041,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			{
 				try
 				{
-					wait();
+					if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logSuspend();
+                    try { wait(); } finally {
+                        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logResume();
+                    }
 				}
 				catch (InterruptedException ie)
 				{
@@ -2208,7 +2235,11 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			inLogSwitch = false;
 		}
 		// unfreezes the log
-	}
+
+        } finally {
+            if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.phase(occupancyPhase);
+        }
+}
 
 	/**
 		Flush all unwritten log record up to the log instance indicated to disk
@@ -3820,8 +3851,11 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 								// exception 
 			}
 
-			synchronized (this)
+			if (RawStoreOccupancy.ENABLED) occupancyWait();
+            synchronized (this)
 			{
+                if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logAcquired();
+                try {
 				// has someone else found a problem in the raw store?
 				if (corrupt != null)
                 {
@@ -3899,7 +3933,11 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 				}
 
 				setEndPosition( endPosition + (length + LOG_RECORD_OVERHEAD) );
-			}
+
+                } finally {
+                    if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logReleased();
+                }
+            }
 		}
 		catch (IOException ioe)
 		{
@@ -3995,7 +4033,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 					{
 						try 
 						{
-							wait();
+							if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logSuspend();
+                    try { wait(); } finally {
+                        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logResume();
+                    }
 						} 
 						catch (InterruptedException ie) 
 						{
@@ -4051,7 +4092,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 						{
 							if (Performance.MEASURE)
 								mon_numLogFlushWaits++;
-							wait();	// release log semaphore to let non-flushing
+							if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logSuspend();
+                    try { wait(); } finally {
+                        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logResume();
+                    }	// release log semaphore to let non-flushing
 							// threads log stuff while all the flushing 
 							// threads wait.
 
@@ -5028,7 +5072,10 @@ public final class LogToFile implements LogFactory, ModuleControl, ModuleSupport
 			{
 				try
 				{
-					wait();
+					if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logSuspend();
+                    try { wait(); } finally {
+                        if (RawStoreOccupancy.ENABLED) RawStoreOccupancy.logResume();
+                    }
 				}	
 				catch (InterruptedException ie)
 				{
