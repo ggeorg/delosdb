@@ -40,7 +40,6 @@ import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.types.DelosStorageConsistencyTarget;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
-import org.apache.derby.iapi.store.types.DelosStorageProviderIds;
 
 import junit.framework.TestCase;
 
@@ -300,22 +299,12 @@ abstract class MvccSqlTestSupport extends TestCase {
         }
     }
 
+    /**
+     * Table-provider identity is persisted only in the base conglomerate's
+     * factory id; SYSTABLES has no storage-provider column.
+     */
     protected static void assertMvccStorageProvider(Connection connection, String tableName)
             throws SQLException {
-        String sql = "select t.storageprovider "
-                + "from sys.systables t, sys.sysschemas s "
-                + "where t.schemaid = s.schemaid "
-                + "and s.schemaname = 'APP' "
-                + "and t.tablename = ?";
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, tableName);
-            try (ResultSet rs = statement.executeQuery()) {
-                assertTrue("expected table " + tableName, rs.next());
-                assertEquals(DelosStorageProviderIds.MVCC_PROVIDER_ID, rs.getString(1));
-                assertFalse("expected one table descriptor for " + tableName, rs.next());
-            }
-        }
-
         long containerId = mvccContainerId(connection, tableName);
         assertEquals(ConglomerateFactory.MVCC_FACTORY_ID, (int) (containerId & 0x0fL));
     }
