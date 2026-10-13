@@ -22,7 +22,7 @@
 package org.apache.derby.diag;
 
 // temp
-import org.apache.derby.impl.services.locks.TableNameInfo;
+import org.apache.derby.impl.sql.conn.TableNameInfo;
 
 import org.apache.derby.iapi.services.locks.LockFactory;
 import org.apache.derby.iapi.services.locks.Latch;

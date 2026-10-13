@@ -142,10 +142,12 @@ delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/DataStoreMemoryBudge
 delosdb-engine/src/main/java/org/apache/derby/impl/security/EngineStoreSecuritySupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/package-info.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockReports.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineContextKernelSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineMonitorKernelSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/EngineInterruptStatusKernelSupport.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/EngineLockReportSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AggregateResultSetParameters.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CurrentOfResultSetParameters.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/DeleteCascadeResultSetParameters.java
@@ -176,6 +178,9 @@ delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/Context
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/StoreExecutionContext.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DelosHeapObjectDeserializationFilter.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/Resetable.java
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockObjectNames.java
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockReportSupport.java
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockTransactionInfo.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/monitor/MonitorKernelSupport.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/monitor/MonitorKernelSupportRegistry.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/monitor/StoreServiceProperties.java

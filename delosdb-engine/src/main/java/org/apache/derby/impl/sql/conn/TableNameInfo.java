@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.services.locks.TableNameInfo
+   Derby - Class org.apache.derby.impl.sql.conn.TableNameInfo
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -19,12 +19,13 @@
 
  */
 
-package org.apache.derby.impl.services.locks;
+package org.apache.derby.impl.sql.conn;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
 
+import org.apache.derby.iapi.services.locks.LockObjectNames;
 import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
 import org.apache.derby.iapi.sql.dictionary.ConglomerateDescriptor;
@@ -36,7 +37,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.apache.derby.catalog.UUID;
 
-public class TableNameInfo {
+public class TableNameInfo implements LockObjectNames {
 
 	// things to look up table name etc
 	private DataDictionary dd;

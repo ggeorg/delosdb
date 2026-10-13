@@ -31,8 +31,8 @@ import org.apache.derby.iapi.services.locks.VirtualLockTable;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 import org.apache.derby.shared.common.error.StandardException;
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
-import org.apache.derby.iapi.store.access.TransactionController;
+import org.apache.derby.iapi.services.locks.LockObjectNames;
+import org.apache.derby.iapi.services.locks.LockReportSupport;
 
 import java.util.Date;
 import java.util.Enumeration;
@@ -55,8 +55,9 @@ public final class Timeout
     //public static final String newline = String.valueOf( (char)(new Byte(Character.LINE_SEPARATOR)).intValue() );
     //public static final String newline = System.getProperty( "line.separator" );
 
-    private TransactionController tc;
-    private TableNameInfo tabInfo;
+    private Object lcc;
+    private LockReportSupport support;
+    private LockObjectNames tabInfo;
 
     /* the current Latch to extract info out of */
     private Latch currentLock;
@@ -160,17 +161,19 @@ public final class Timeout
         int i; // counter
 
         // need language here to print out tablenames
-        LanguageConnectionContext lcc = (LanguageConnectionContext)
-            Deadlock.getContext(LanguageConnectionContext.CONTEXT_ID);
-        if( lcc != null )
-            tc = lcc.getTransactionExecute();
-
-        try
+        Object currentLcc = LockReports.currentLanguageConnectionContext();
+        LockReportSupport currentSupport = LockReports.support();
+        if( currentLcc != null && currentSupport != null )
         {
-            tabInfo = new TableNameInfo( lcc, true );
-        }
-        catch (Exception se)
-        {   //just don't do anything
+            lcc = currentLcc;
+            support = currentSupport;
+            try
+            {
+                tabInfo = support.lockObjectNames( lcc, true );
+            }
+            catch (Exception se)
+            {   //just don't do anything
+            }
         }
 
         sb.append( newline );
@@ -291,10 +294,10 @@ public final class Timeout
         
         if( conglomId == null )
         {
-            if( attributes.get(VirtualLockTable.CONTAINERID) != null && tc != null )
+            if( attributes.get(VirtualLockTable.CONTAINERID) != null && lcc != null )
             {   
                 Long value = (Long)attributes.get(VirtualLockTable.CONTAINERID);
-                conglomId = tc.findConglomid( value.longValue() );
+                conglomId = support.findConglomid( lcc, value.longValue() );
                 attributes.put( VirtualLockTable.CONGLOMID, conglomId );
             }
         }
@@ -303,11 +306,11 @@ public final class Timeout
 
         if( containerId == null )
         {
-            if( conglomId != null && tc != null )
+            if( conglomId != null && lcc != null )
             {
                 try
                 {
-                    containerId = tc.findContainerid( conglomId.longValue() );
+                    containerId = support.findContainerid( lcc, conglomId.longValue() );
                     attributes.put( VirtualLockTable.CONTAINERID, containerId );
                 }
                 catch( Exception e )

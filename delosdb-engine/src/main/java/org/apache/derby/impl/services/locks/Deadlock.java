@@ -26,11 +26,11 @@ import org.apache.derby.iapi.services.locks.VirtualLockTable;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
-import org.apache.derby.iapi.sql.conn.LanguageConnectionContext;
 import org.apache.derby.iapi.services.context.Context;
 import org.apache.derby.iapi.services.context.ContextService;
-import org.apache.derby.iapi.store.access.TransactionController;
-import org.apache.derby.iapi.store.access.TransactionInfo;
+import org.apache.derby.iapi.services.locks.LockObjectNames;
+import org.apache.derby.iapi.services.locks.LockReportSupport;
+import org.apache.derby.iapi.services.locks.LockTransactionInfo;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -444,20 +444,18 @@ inner:		for (;;) {
 		Map<?,?> waiters = (Map<?,?>) data[1];
 
 
-		LanguageConnectionContext lcc = (LanguageConnectionContext)
-			getContext(LanguageConnectionContext.CONTEXT_ID);
+		Object lcc = LockReports.currentLanguageConnectionContext();
+		LockReportSupport support = LockReports.support();
 
-		TableNameInfo tabInfo = null;
-		TransactionInfo[] tt = null;
-		TransactionController tc = null;
+		LockObjectNames tabInfo = null;
+		List<LockTransactionInfo> tt = null;
 
-		if (lcc != null) {
+		if (lcc != null && support != null) {
 
 			try {
-				tc = lcc.getTransactionExecute();
-				tabInfo = new TableNameInfo(lcc, false);
+				tabInfo = support.lockObjectNames(lcc, false);
 
-				tt = tc.getAccessManager().getTransactionInfo();
+				tt = support.transactionInfo(lcc);
 
 			} catch (StandardException se) {
 				// just don't get any table info.
@@ -510,7 +508,7 @@ inner:		for (;;) {
 				if (conglomId == null) {
 					Long containerId = (Long) attributes.get(VirtualLockTable.CONTAINERID);
 					try {
-						conglomId = tc.findConglomid(containerId.longValue());
+						conglomId = support.findConglomid(lcc, containerId.longValue());
 					} catch (StandardException se) {
 					}
 				}
@@ -529,21 +527,18 @@ inner:		for (;;) {
 			addInfo(sb, ", ", lock.getQualifier());
 			sb.append("} ");
 			if (tt != null) {
-				for (int tti = tt.length - 1; tti >= 0; tti--) {
-					TransactionInfo ti = tt[tti];
+				for (int tti = tt.size() - 1; tti >= 0; tti--) {
+					LockTransactionInfo ti = tt.get(tti);
 
-                    // RESOLVE (track 2771) - not sure why 
-                    // ti.getTransactionIdString() or ti can return null.
-                    if (ti != null)
-                    {
-                        String idString = ti.getTransactionIdString();
+                    // RESOLVE (track 2771) - not sure why
+                    // ti.transactionId() can return null.
+                    String idString = ti.transactionId();
 
-                        if (idString != null && idString.equals(xid)) {
+                    if (idString != null && idString.equals(xid)) {
 
-                            addInfo(sb, ", ", ti.getUsernameString());
-                            addInfo(sb, ", ", ti.getStatementTextString());
-                            break;
-                        }
+                        addInfo(sb, ", ", ti.userName());
+                        addInfo(sb, ", ", ti.statementText());
+                        break;
                     }
 				}
 			}

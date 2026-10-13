@@ -136,12 +136,16 @@ module org.apache.derby.engine
     uses org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
     uses org.apache.derby.iapi.store.types.StoreRowLocationFactory;
     uses org.apache.derby.iapi.store.types.StoreTypeSupport;
+    uses org.apache.derby.iapi.services.locks.LockReportSupport;
 
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
         with org.apache.derby.impl.services.monitor.EngineMonitorKernelSupport;
 
     provides org.apache.derby.iapi.util.InterruptStatusKernelSupport
         with org.apache.derby.impl.sql.conn.EngineInterruptStatusKernelSupport;
+
+    provides org.apache.derby.iapi.services.locks.LockReportSupport
+        with org.apache.derby.impl.sql.conn.EngineLockReportSupport;
 
     provides org.apache.derby.iapi.services.security.StoreSecuritySupport
         with org.apache.derby.impl.security.EngineStoreSecuritySupport;

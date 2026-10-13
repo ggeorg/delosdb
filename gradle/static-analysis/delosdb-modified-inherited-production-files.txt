@@ -145,7 +145,6 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisti
 delosdb-engine/src/main/java/org/apache/derby/impl/services/jmx/JMXManagementService.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/AbstractPool.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Deadlock.java
-delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/TableNameInfo.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/FileMonitor.java
@@ -203,6 +202,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/compile/XMLOptTrace.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericLanguageConnectionContext.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericLanguageConnectionFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/GenericStatementContext.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/TableNameInfo.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/depend/BasicDependencyManager.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AggregateSortObserver.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AggregatorInfoList.java
