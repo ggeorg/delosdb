@@ -299,6 +299,7 @@ tasks.named('delosSystemTests', Test) {
 // the registered active performance authority through this aggregate.
 def performanceFocusedTasks = [
         'runDelosF08InsertCommitDecomposition',
+        'runDelosF08TransactionStatusConcurrentCommitQualification',
         'runDelosHeapDiagnosticsPerformanceAuditTest',
         'runDelosHeapPageReadImageCorrectnessProof',
         'runDelosJdbcBenchmarkBaseline',
@@ -370,6 +371,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
 
         Set<String> expectedPerformanceClasses = [
                 'org.apache.derbyTesting.functionTests.tests.delos.F08InsertCommitDecompositionTest',
+                'org.apache.derbyTesting.functionTests.tests.delos.F08TransactionStatusConcurrentCommitQualificationTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.HeapDiagnosticsPerformanceAuditTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.HeapPageReadImageArchitectureProofTest',
                 'org.apache.derbyTesting.functionTests.tests.delos.JdbcBenchmarkBaselineTest',
