@@ -29,7 +29,6 @@ import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.services.diag.DiagnosticUtil;
 import org.apache.derby.iapi.services.diag.Diagnosticable;
-import org.apache.derby.impl.store.raw.data.StoredPageSanityChecker;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -76,7 +75,7 @@ final class HeapSanityChecker {
                 checkPageNumber(context, pageNumber, seenPages);
                 checkRecordCounts(page, context);
                 checkDiagnosticProperties(page, context);
-                StoredPageSanityChecker.checkPage(page, context);
+                page.checkPhysicalConsistency(context);
 
                 previousPageNumber = pageNumber;
                 page.unlatch();

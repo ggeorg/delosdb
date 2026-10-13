@@ -1125,6 +1125,18 @@ public interface Page
      */
     long getPageVersion();
 
+    /**
+     * Check this page's physical invariants: space accounting and the slot
+     * table. The check is read-only; SYSCS_CHECK_TABLE runs it on every heap
+     * page.
+     *
+     * <BR> MT - latched
+     *
+     * @param context container and page description for error messages
+     * @exception StandardException if an invariant does not hold
+     */
+    void checkPhysicalConsistency(String context) throws StandardException;
+
 	/*
 	 * time stamp - for those implmentation that supports it
 	 */

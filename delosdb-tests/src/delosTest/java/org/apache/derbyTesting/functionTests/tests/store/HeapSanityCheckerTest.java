@@ -20,10 +20,12 @@
 package org.apache.derbyTesting.functionTests.tests.store;
 
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.Statement;
 
 import junit.framework.Test;
 
+import org.apache.derby.impl.store.raw.data.PageConsistencyTestSupport;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
@@ -79,6 +81,34 @@ public final class HeapSanityCheckerTest extends BaseJDBCTestCase {
         getConnection().close();
         assertCheckTable("HEAP_SANITY_EMPTY");
         assertCheckTable("HEAP_SANITY_ROWS");
+    }
+
+    /**
+     * The heap check reaches RawStore's page invariants through the Page
+     * contract, and a broken invariant is reported rather than ignored.
+     */
+    public void testPageContractReportsBrokenFreeSpaceAccounting() throws Exception {
+        Statement s = createStatement();
+        s.execute("create table heap_sanity_broken (id int not null, payload varchar(64))");
+        s.executeUpdate("insert into heap_sanity_broken values (1, 'one'), (2, 'two')");
+        commit();
+        // A clean page cannot be written, so the in-memory corruption stays in memory.
+        s.execute("call syscs_util.syscs_checkpoint_database()");
+
+        long conglomerate;
+        try (ResultSet rs = s.executeQuery("select c.conglomeratenumber"
+                + " from sys.sysconglomerates c join sys.systables t on c.tableid = t.tableid"
+                + " where t.tablename = 'HEAP_SANITY_BROKEN' and not c.isindex")) {
+            assertTrue(rs.next());
+            conglomerate = rs.getLong(1);
+        }
+
+        String failure = PageConsistencyTestSupport.checkWithOverstatedFreeSpace(
+                getConnection(), conglomerate);
+        assertNotNull("overstated free space must fail the page check", failure);
+        assertTrue(failure, failure.contains("invariant=currentFreeSpaceWithinPage"));
+        commit();
+        assertCheckTable("HEAP_SANITY_BROKEN");
     }
 
     private static String payload(int id) {

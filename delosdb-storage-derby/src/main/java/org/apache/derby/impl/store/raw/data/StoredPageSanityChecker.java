@@ -27,7 +27,6 @@ import org.apache.derby.iapi.services.io.CounterOutputStream;
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.services.io.NullOutputStream;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
-import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
@@ -40,7 +39,7 @@ import org.apache.derby.shared.common.reference.SQLState;
  * {@link D_StoredPage} diagnostics so callers can run consistency checks
  * without coupling correctness to stream-oriented diagnostic output.</p>
  */
-public final class StoredPageSanityChecker {
+final class StoredPageSanityChecker {
 
     private StoredPageSanityChecker() {
     }
@@ -48,19 +47,14 @@ public final class StoredPageSanityChecker {
     /**
      * Check raw stored-page invariants while the page is latched.
      *
-     * @param page latched heap page
+     * @param page latched page
      * @param context human-readable container/page context for error messages
      * @throws StandardException if an invariant fails
      */
-    public static void checkPage(Page page, String context)
+    static void checkPage(StoredPage page, String context)
             throws StandardException {
-        if (!(page instanceof StoredPage)) {
-            return;
-        }
-
-        StoredPage storedPage = (StoredPage) page;
-        checkSpaceAccounting(storedPage, context);
-        checkSlotTable(storedPage, context);
+        checkSpaceAccounting(page, context);
+        checkSlotTable(page, context);
     }
 
     private static void checkSpaceAccounting(StoredPage page, String context)

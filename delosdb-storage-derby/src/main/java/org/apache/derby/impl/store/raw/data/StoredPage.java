@@ -3607,6 +3607,11 @@ public class StoredPage extends CachedPage
     }
 
     @Override
+    public void checkPhysicalConsistency(String context) throws StandardException {
+        StoredPageSanityChecker.checkPage(this, context);
+    }
+
+    @Override
     public boolean tryUpdateWithArchive(int slot, Object[] row, FormatableBitSet columns,
             Page archive, int archiveSlot) throws StandardException {
         boolean updated = ArchivedUpdateSupport.tryUpdate(
