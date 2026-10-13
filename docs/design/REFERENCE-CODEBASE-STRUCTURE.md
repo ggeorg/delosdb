@@ -192,7 +192,7 @@ The third kind is a real dependency: DDL execution compiles SQL. Moving the cons
 
 - `daemon` is the index-statistics daemon, which is SQL work by nature.
 - `storetypes` adapts store values to SQL types by design.
-- `reflect` uses one `CodeGeneration` constant.
+- `reflect` used one `CodeGeneration` constant, the generated-class package. That constant is now defined by `ClassFactory` in runtime-api, and `CodeGeneration` keeps it as an alias.
 - `locks` is the only general kernel service that depends on SQL. `Deadlock` and `Timeout` take the `LanguageConnectionContext` from the context stack to get the current `TransactionController`, and they build `TableNameInfo`, which reads the data dictionary, to name the tables, indexes and statements in deadlock and timeout reports. `diag.LockTable` reuses `TableNameInfo`. The lock algorithm itself has no SQL dependency.
 
 Separating the lock manager from SQL needs a small runtime-api contract for naming lock objects, with `TableNameInfo` moved to the SQL layer. That adds public module surface and must keep the report text unchanged. This dependency is recorded here as evidence; the execution plan above sets the order of work.

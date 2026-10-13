@@ -34,6 +34,12 @@ import java.io.ObjectStreamClass;
 public interface ClassFactory {
 
 	/**
+		The package of every generated class. The class factory loads
+		generated classes only from this package.
+	*/
+	String GENERATED_PACKAGE_PREFIX = "org.apache.derby.exe.";
+
+	/**
 		Add a generated class to the class manager's class repository.
 
         @param fullyQualifiedName Full name of the class

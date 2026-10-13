@@ -21,7 +21,7 @@
 
 package org.apache.derby.impl.services.reflect;
 
-import org.apache.derby.iapi.sql.compile.CodeGeneration;
+import org.apache.derby.iapi.services.loader.ClassFactory;
 import org.apache.derby.iapi.util.ByteArray;
 
 /**
@@ -71,7 +71,7 @@ public class ReflectClassesJava2 extends DatabaseClasses
             actualPackage = fullyQualifiedName.substring( 0, lastDot + 1 );
         }
 
-        if ( !CodeGeneration.GENERATED_PACKAGE_PREFIX.equals( actualPackage ) )
+        if ( !ClassFactory.GENERATED_PACKAGE_PREFIX.equals( actualPackage ) )
         {
             throw new IllegalArgumentException( fullyQualifiedName );
         }

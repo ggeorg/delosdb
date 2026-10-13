@@ -21,11 +21,13 @@
 
 package org.apache.derby.iapi.sql.compile;
 
+import org.apache.derby.iapi.services.loader.ClassFactory;
+
 /**
  * This is a simple interface that houses externally visible
  * statics for code generation.
  */
 public interface CodeGeneration
 {
-	String GENERATED_PACKAGE_PREFIX = "org.apache.derby.exe.";
+	String GENERATED_PACKAGE_PREFIX = ClassFactory.GENERATED_PACKAGE_PREFIX;
 }
