@@ -22,7 +22,7 @@
 package org.apache.derby.impl.sql.catalog;
 
 
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 import io.github.ggeorg.delosdb.spi.annotation.LegacyInternal;
 

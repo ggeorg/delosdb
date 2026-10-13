@@ -523,7 +523,7 @@ public class T_ConsistencyChecker
         try
         {
             Class<?> bridgeClass = Class.forName(
-                "org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge");
+                "org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge");
             java.lang.reflect.Method method =
                 bridgeClass.getMethod("requireEngineRowLocation", Object.class);
             return (RowLocation) method.invoke(null, rowLocation);

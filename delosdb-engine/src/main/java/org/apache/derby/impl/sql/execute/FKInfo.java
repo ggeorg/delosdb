@@ -36,7 +36,7 @@ import org.apache.derby.iapi.services.io.StoredFormatIds;
 import org.apache.derby.iapi.services.monitor.Monitor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * This is a simple class used to store the run time information

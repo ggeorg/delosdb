@@ -147,7 +147,7 @@ module org.apache.derby.engine
         with org.apache.derby.impl.security.EngineStoreSecuritySupport;
 
     provides org.apache.derby.iapi.store.types.StoreTypeSupport
-        with org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport;
+        with org.apache.derby.impl.sql.storetypes.EngineStoreTypeSupport;
 
     provides org.apache.derby.iapi.store.access.conglomerate.ExternalAccessMethodProvider
         with org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider;
@@ -160,7 +160,7 @@ module org.apache.derby.engine
         with org.apache.derby.impl.store.access.provider.DerbyStoreRowLocationFactory;
 
     provides org.apache.derby.iapi.types.RowLocationServices
-        with org.apache.derby.impl.services.storetypes.EngineRowLocationServices;
+        with org.apache.derby.impl.sql.storetypes.EngineRowLocationServices;
 
     provides org.apache.derby.iapi.store.access.StoreCostControllerWrapper
         with io.github.ggeorg.delosdb.engine.extension.cost.StoreCostControllerBridge;

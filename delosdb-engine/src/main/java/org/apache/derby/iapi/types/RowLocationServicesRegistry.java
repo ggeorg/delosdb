@@ -38,7 +38,7 @@ import java.util.ServiceLoader;
 public final class RowLocationServicesRegistry
 {
     private static final String ENGINE_ROW_LOCATION_SERVICES =
-            "org.apache.derby.impl.services.storetypes.EngineRowLocationServices";
+            "org.apache.derby.impl.sql.storetypes.EngineRowLocationServices";
 
     private RowLocationServicesRegistry()
     {

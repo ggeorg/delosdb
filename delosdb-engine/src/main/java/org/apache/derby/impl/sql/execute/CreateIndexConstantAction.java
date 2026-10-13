@@ -60,7 +60,7 @@ import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.TypeId;
 import org.apache.derby.impl.services.daemon.IndexStatisticsDaemonImpl;
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * ConstantAction to create an index either through

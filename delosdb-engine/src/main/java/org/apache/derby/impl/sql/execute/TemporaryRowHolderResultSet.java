@@ -46,7 +46,7 @@ import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.iapi.sql.dictionary.DataDictionary;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * A result set to scan temporary row holders.  Ultimately, this

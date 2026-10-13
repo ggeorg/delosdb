@@ -43,7 +43,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.NumberDataValue;
 import org.apache.derby.impl.sql.execute.DeferredConstraintsMemory.CheckInfo;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 import org.apache.derby.shared.common.sanity.SanityManager;
 /**
  *	This class  describes actions that are ALWAYS performed for a

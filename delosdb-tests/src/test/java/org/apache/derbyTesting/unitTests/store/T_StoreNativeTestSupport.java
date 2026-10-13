@@ -61,7 +61,7 @@ final class T_StoreNativeTestSupport
         try
         {
             Class<?> bridgeClass = Class.forName(
-                "org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge");
+                "org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge");
             Method method = bridgeClass.getMethod("requireEngineRowLocation", Object.class);
             return (RowLocation) method.invoke(null, rowLocation);
         }

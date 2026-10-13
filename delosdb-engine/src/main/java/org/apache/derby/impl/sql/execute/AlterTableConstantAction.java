@@ -87,7 +87,7 @@ import org.apache.derby.iapi.util.IdUtil;
 import org.apache.derby.impl.sql.compile.ColumnDefinitionNode;
 import org.apache.derby.impl.sql.compile.StatementNode;
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  *	This class  describes actions that are ALWAYS performed for an

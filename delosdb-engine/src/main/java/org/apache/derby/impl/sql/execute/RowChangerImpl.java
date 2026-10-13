@@ -54,7 +54,7 @@ import java.util.Objects;
 import org.apache.derby.iapi.types.RowLocation;
 
 import java.util.Vector;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
   Perform row at a time DML operations of tables and maintain indexes.

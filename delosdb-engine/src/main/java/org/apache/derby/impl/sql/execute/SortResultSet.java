@@ -45,7 +45,7 @@ import org.apache.derby.iapi.services.io.FormatableArrayHolder;
 
 import java.util.Properties;
 import org.apache.derby.iapi.sql.execute.ExecRowBuilder;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * Takes a source result set, sends it to the sorter,

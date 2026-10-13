@@ -39,7 +39,7 @@ import org.apache.derby.iapi.types.SQLLongint;
 
 
 import java.util.Properties;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * This is a class that is used to temporarily

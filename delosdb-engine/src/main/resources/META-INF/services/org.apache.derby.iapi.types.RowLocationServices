@@ -1,1 +1,1 @@
-org.apache.derby.impl.services.storetypes.EngineRowLocationServices
+org.apache.derby.impl.sql.storetypes.EngineRowLocationServices

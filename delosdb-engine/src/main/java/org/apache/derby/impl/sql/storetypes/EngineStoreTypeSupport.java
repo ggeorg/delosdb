@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.services.storetypes.EngineStoreTypeSupport
+   Derby - Class org.apache.derby.impl.sql.storetypes.EngineStoreTypeSupport
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -18,7 +18,7 @@
    limitations under the License.
 
  */
-package org.apache.derby.impl.services.storetypes;
+package org.apache.derby.impl.sql.storetypes;
 
 import java.io.IOException;
 import java.io.InputStream;

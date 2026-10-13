@@ -145,9 +145,6 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/package-inf
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineContextKernelSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineMonitorKernelSupport.java
-delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineRowLocationServices.java
-delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreRowLocationBridge.java
-delosdb-engine/src/main/java/org/apache/derby/impl/services/storetypes/EngineStoreTypeSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/EngineInterruptStatusKernelSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AggregateResultSetParameters.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/CurrentOfResultSetParameters.java
@@ -169,6 +166,9 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UnionResultSetPar
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/UpdateResultSetParameters.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/rts/XPLAINResultSetDescriptorBuilder.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/rts/XPLAINResultSetTimingsDescriptorBuilder.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineRowLocationServices.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreRowLocationBridge.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreTypeSupport.java
 delosdb-engine/src/main/java/org/apache/derby/loc/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/package-info.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/ContextKernelSupport.java

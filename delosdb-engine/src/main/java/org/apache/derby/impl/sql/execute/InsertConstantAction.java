@@ -41,7 +41,7 @@ import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
 import org.apache.derby.iapi.types.RowLocation;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 import org.apache.derby.catalog.UUID;
 

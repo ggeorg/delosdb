@@ -20,7 +20,7 @@ import org.apache.derby.iapi.types.RowLocation;
 import org.apache.derby.iapi.types.SQLInteger;
 import org.apache.derby.iapi.types.SQLLongint;
 import org.apache.derby.iapi.types.SQLVarchar;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /** Proves engine SQL values use the direct shared store-value operation path. */
 public final class StoreValueOperationsDirectPathTest extends TestCase {

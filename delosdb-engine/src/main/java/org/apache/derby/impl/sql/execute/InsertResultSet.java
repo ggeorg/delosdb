@@ -78,7 +78,7 @@ import org.apache.derby.iapi.types.SQLBoolean;
 import org.apache.derby.iapi.util.StringUtil;
 import org.apache.derby.impl.sql.execute.DeferredConstraintsMemory.CheckInfo;
 import org.apache.derby.shared.common.sanity.SanityManager;
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 /**
  * Insert the rows from the source into the specified

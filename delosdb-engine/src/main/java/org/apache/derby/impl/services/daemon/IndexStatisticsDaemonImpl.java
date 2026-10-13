@@ -21,7 +21,7 @@
 package org.apache.derby.impl.services.daemon;
 
 
-import org.apache.derby.impl.services.storetypes.EngineStoreRowLocationBridge;
+import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
