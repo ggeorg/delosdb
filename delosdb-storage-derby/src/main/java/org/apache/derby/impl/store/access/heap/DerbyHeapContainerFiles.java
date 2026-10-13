@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.store.access.provider.DerbyHeapContainerFiles
+   Derby - Class org.apache.derby.impl.store.access.heap.DerbyHeapContainerFiles
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -18,7 +18,7 @@
    limitations under the License.
 
  */
-package org.apache.derby.impl.store.access.provider;
+package org.apache.derby.impl.store.access.heap;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics
+   Derby - Class org.apache.derby.impl.store.access.heap.DerbyHeapStorageDiagnostics
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -19,7 +19,7 @@
 
  */
 
-package org.apache.derby.impl.store.access.provider;
+package org.apache.derby.impl.store.access.heap;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

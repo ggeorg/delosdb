@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.store.access.provider.DerbyStoreRowLocationFactory
+   Derby - Class org.apache.derby.impl.store.access.heap.DerbyStoreRowLocationFactory
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -18,11 +18,10 @@
    limitations under the License.
 
  */
-package org.apache.derby.impl.store.access.provider;
+package org.apache.derby.impl.store.access.heap;
 
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreRowLocationFactory;
-import org.apache.derby.impl.store.access.heap.HeapRowLocation;
 
 /** Row-location factory for the inherited Derby heap provider. */
 public final class DerbyStoreRowLocationFactory implements StoreRowLocationFactory {

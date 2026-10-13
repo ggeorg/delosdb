@@ -153,11 +153,11 @@ module org.apache.derby.engine
         with org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider;
 
     provides org.apache.derby.iapi.store.types.DelosStorageDiagnostics
-        with org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics,
+        with org.apache.derby.impl.store.access.heap.DerbyHeapStorageDiagnostics,
              org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics;
 
     provides org.apache.derby.iapi.store.types.StoreRowLocationFactory
-        with org.apache.derby.impl.store.access.provider.DerbyStoreRowLocationFactory;
+        with org.apache.derby.impl.store.access.heap.DerbyStoreRowLocationFactory;
 
     provides org.apache.derby.iapi.types.RowLocationServices
         with org.apache.derby.impl.sql.storetypes.EngineRowLocationServices;

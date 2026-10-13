@@ -86,7 +86,7 @@ tasks.register('verifyDelosRuntimeStorageProviders') {
     def expectedMvccDiagnosticsProvider =
             'org.apache.derby.impl.store.access.mvcc.MvccStorageDiagnostics'
     def expectedDerbyDiagnosticsProviders = [
-            'org.apache.derby.impl.store.access.provider.DerbyHeapStorageDiagnostics',
+            'org.apache.derby.impl.store.access.heap.DerbyHeapStorageDiagnostics',
             expectedMvccDiagnosticsProvider
     ]
     def retiredProviderServiceResource =
