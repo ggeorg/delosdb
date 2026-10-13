@@ -197,6 +197,30 @@ The third kind is a real dependency: DDL execution compiles SQL. Moving the cons
 
 Separating the lock manager from SQL needs a small runtime-api contract for naming lock objects, with `TableNameInfo` moved to the SQL layer. That adds public module surface and must keep the report text unchanged. This dependency is recorded here as evidence; the execution plan above sets the order of work.
 
+**Compatibility-sensitive names by package.** Step 2 asks for these before any move. They were counted for every package of engine, storage-derby, storage-mvcc, derby-store-api and runtime-api, from:
+
+- the `exports` and `provides` clauses in `module-info.java`;
+- the `META-INF/services` registrations;
+- `modules.properties`;
+- `RegisteredFormatIds`;
+- string-literal class names elsewhere in production source;
+- test-support patches compiled into the engine module (`delosdb-tests/build.gradle`).
+
+A file counts as Delos-authored when it does not exist at the same path in Derby 10.17.1.0. These are the families that could be moved:
+
+| Package | Files (Delos-authored) | Exported | Service / string / format-id names | Test patches | Persisted names |
+|---|---|---|---|---|---|
+| inherited SQL and RawStore packages | all inherited | most `iapi`, `catalog`, `jdbc` | many; `catalog.types`, `impl.sql.execute` and `impl.store.raw.data` carry 13-25 format ids each | `raw.data` 8, `services.locks` 6 | format ids and catalog class names |
+| `impl.store.raw.data`, Delos files | 17 of 93 | no | the archived update operations carry log format ids | 8 | log records |
+| `impl.store.access.mvcc` | 32 (all) | no | 5 / 2 / 2, including the `MvccRowLocation` class-name check | 5 | MVCC format ids |
+| `iapi.store.types` | 82 (all) | yes | 3 / 0 / 0 | 0 | none, but it is public contract surface |
+| `impl.store.access.provider` | 3 (all) | no | 4 / 0 / 0 | 0 | none |
+| `impl.services.storetypes` | 3 (all) | no | 4 / 2 / 0 | 0 | none |
+
+Inherited families carry format ids, catalog names or `modules.properties` entries, so moving them needs the compatibility mapping that step 5 of "What should change first" defers. The Delos files in `impl.store.raw.data` need package-private `StoredPage` access, and some carry log format ids.
+
+**The first family moved is `impl.services.storetypes`.** It has the smallest compatibility surface: 3 Delos-authored files, not exported, and no persisted names. Its names appear only in ServiceLoader registrations, `module-info` `provides`, two registry class-name fallbacks, two reflective test lookups and the tests' `--add-exports`. It is also misplaced. It sits among the kernel services, but its job is adapting store-native values to SQL types (12 imports from `iapi.types`), so it moves to `io.github.ggeorg.delosdb.engine.sql.storetypes`. That is the SQL side, under the Delos namespace for Delos-owned internals. The move is a relocation only: class names and behaviour are unchanged.
+
 ## First implemented slices
 
 `runDelosF08OccupancyCampaign` registration now lives in `gradle/benchmarks/rawstore-occupancy.gradle`. The test project passes its benchmark classes, Delos runtime artifacts and upstream Derby configuration explicitly. The task name, flags, output destinations, budgets and lazy external-engine resolution are retained. This is a small ownership extraction; it does not make the remaining test build or benchmark coordinator clean yet.
