@@ -79,6 +79,7 @@ To move a package, use the source inventory first, then classify every name the 
 - `RegisteredFormatIds`;
 - string-literal class names in production code and tests;
 - `--add-exports` lines and test-support patches in `delosdb-tests/build.gradle`.
+- the recorded SHA-256 of any adapted inherited test the move edits, in `gradle/testing/derby-test-adaptations.tsv` and `derby-test-adaptation-support.tsv`; `delosTestProvenanceStaticAnalysis` checks them.
 
 Update all of them in the same commit, and change nothing else.
 
@@ -86,6 +87,7 @@ Keep engine classes under `org.apache.derby`. Embedding applications may load De
 
 ```bash
 ./gradlew s0CloseoutVerification derbyRuntimeSmoke \
+  :delosdb-tests:delosTestProvenanceStaticAnalysis \
   :delosdb-tests:derbyStoreTests :delosdb-tests:derbyNetworkTests \
   :delosdb-tests:delosFunctionalTests --tests '*StoreValueOperationsDirectPathTest' \
   --console=plain
