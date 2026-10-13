@@ -15,6 +15,8 @@ DelosDB's teaching subject is the production database. Start with one operation 
 | Who builds/appends log records? | [FileLogger](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java) and [LogToFile](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java) |
 | Who owns physical transaction outcome/recovery? | [Xact](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java), [RawStore](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java), and log recovery in `LogToFile` |
 | Who owns logical MVCC state? | [MvccRawStoreRuntime](../delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java) and [MvccRawStoreScanController](../delosdb-storage-mvcc/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java) |
+| Who checks a page's physical invariants? | `Page.checkPhysicalConsistency` in [Page](../delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/Page.java), implemented by [StoredPage](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPage.java) with [StoredPageSanityChecker](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/StoredPageSanityChecker.java); `SYSCS_CHECK_TABLE` reaches it through [HeapSanityChecker](../delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/HeapSanityChecker.java) |
+| Who adapts store values and row locations to SQL types? | `delosdb-engine/.../impl/sql/storetypes`: [EngineStoreRowLocationBridge](../delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreRowLocationBridge.java) and the two ServiceLoader providers; contract code reaches it through `RowLocationServicesRegistry` and `StoreTypeSupportRegistry` |
 | Where are lock/cache implementations? | `delosdb-engine/.../impl/services/{locks,cache}`; generic contracts are in `delosdb-runtime-api` |
 | Who owns forked benchmark JVM execution? | [BenchmarkWorkerProcess](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkerProcess.java) owns launch/wait/timeout/log failure handling; [BenchmarkWorkerCommand](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkerCommand.java) constructs arguments; [BenchmarkConfiguration](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkConfiguration.java) owns defaults, campaign validation and classpaths; [BenchmarkWorkloadRunner](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkloadRunner.java) owns the child case schedule and report lifecycle; [BenchmarkCaseMeasurement](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkCaseMeasurement.java) owns measurement; [BenchmarkConcurrentCase](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkConcurrentCase.java) owns concurrent clients and intervals |
 | Where are shared benchmark workloads, targets and result contracts? | [BenchmarkModel](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkModel.java) defines targets/endpoints, workload classification, case shapes, measurement/oracle/protocol records and CSV contracts |
@@ -66,6 +68,32 @@ For page selection/validity, start with `HeapInsertLaneTest` and `CachedPageVali
 ./gradlew :delosdb-tests:delosConcurrencyTests \
   --tests '*HeapInsertLaneTest' --tests '*CachedPageValidityTest' \
   -Pdelosdb.sane=false --console=plain
+```
+
+To move a package, use the source inventory first, then classify every name the package carries. The checks below come from the migration rules in [REFERENCE-CODEBASE-STRUCTURE.md](design/REFERENCE-CODEBASE-STRUCTURE.md):
+
+- `exports` and `provides` in `module-info.java`;
+- `META-INF/services` files;
+- `modules.properties`;
+- `RegisteredFormatIds`;
+- string-literal class names in production code and tests;
+- `--add-exports` lines and test-support patches in `delosdb-tests/build.gradle`.
+
+Update all of them in the same commit, and change nothing else.
+
+Keep engine classes under `org.apache.derby`. Embedding applications may load Derby through a class loader that loads only that prefix itself, and `ClassLoaderBootTest` in the store suite proves that boot still works that way. The move of `impl.services.storetypes` to `impl.sql.storetypes` is the worked example:
+
+```bash
+./gradlew s0CloseoutVerification derbyRuntimeSmoke \
+  :delosdb-tests:derbyStoreTests :delosdb-tests:derbyNetworkTests \
+  :delosdb-tests:delosFunctionalTests --tests '*StoreValueOperationsDirectPathTest' \
+  --console=plain
+```
+
+For the page-invariant contract, `HeapSanityCheckerTest` breaks one invariant in memory and requires the check to report it:
+
+```bash
+./gradlew :delosdb-tests:delosFunctionalTests --tests '*HeapSanityCheckerTest' --console=plain
 ```
 
 The [embedded insert probe](../tools/diagnostics/insert-probe/README.md) provides a narrow throughput/attribution comparison. Retain all runs and settings; a favorable rate does not replace rollback, consistency and crash recovery checks.
