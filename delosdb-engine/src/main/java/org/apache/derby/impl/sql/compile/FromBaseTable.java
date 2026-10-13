@@ -78,7 +78,7 @@ import org.apache.derby.iapi.util.JBitSet;
 import org.apache.derby.iapi.util.StringUtil;
 
 // Temporary until user override for disposable stats has been removed.
-import org.apache.derby.impl.services.daemon.IndexStatisticsDaemonImpl;
+import org.apache.derby.impl.sql.catalog.IndexStatisticsDaemonImpl;
 import org.apache.derby.impl.sql.catalog.SYSUSERSRowFactory;
 
 /**

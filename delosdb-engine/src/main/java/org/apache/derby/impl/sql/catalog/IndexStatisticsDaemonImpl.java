@@ -1,6 +1,6 @@
 /*
 
-   Derby - Class org.apache.derby.impl.services.daemon.IndexStatisticsDaemonImpl
+   Derby - Class org.apache.derby.impl.sql.catalog.IndexStatisticsDaemonImpl
 
    Licensed to the Apache Software Foundation (ASF) under one or more
    contributor license agreements.  See the NOTICE file distributed with
@@ -18,7 +18,7 @@
    limitations under the License.
 
  */
-package org.apache.derby.impl.services.daemon;
+package org.apache.derby.impl.sql.catalog;
 
 
 import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
@@ -300,7 +300,7 @@ public class IndexStatisticsDaemonImpl
                 if (runningThread == null) {
                     //DERBY-5582. Make sure the thread is in the derby group
                     // to avoid potential security manager issues
-                    runningThread = BasicDaemon.getMonitor().getDaemonThread(this, "index-stat-thread", false);
+                    runningThread = Monitor.getMonitor().getDaemonThread(this, "index-stat-thread", false);
                     runningThread.start();
                 }
             }

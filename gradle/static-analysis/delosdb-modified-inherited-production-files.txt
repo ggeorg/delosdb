@@ -141,7 +141,6 @@ delosdb-engine/src/main/java/org/apache/derby/impl/load/Import.java
 delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCache.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/BasicDaemon.java
-delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/IndexStatisticsDaemonImpl.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/jmx/JMXManagementService.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/AbstractPool.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Deadlock.java
@@ -164,6 +163,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/GenericPreparedStatement.
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/LanguageDbPropertySetter.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DataDictionaryImpl.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/DropDependencyFilter.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/IndexStatisticsDaemonImpl.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/SYSROLESRowFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/TabInfoImpl.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/XPLAINResultSetDescriptor.java

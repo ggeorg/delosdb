@@ -161,7 +161,6 @@ import org.apache.derby.iapi.types.StringDataValue;
 import org.apache.derby.iapi.types.TypeId;
 import org.apache.derby.iapi.types.UserType;
 import org.apache.derby.iapi.util.IdUtil;
-import org.apache.derby.impl.services.daemon.IndexStatisticsDaemonImpl;
 import org.apache.derby.impl.services.locks.Timeout;
 import org.apache.derby.impl.sql.compile.ColumnReference;
 import org.apache.derby.impl.sql.compile.QueryTreeNode;

@@ -190,12 +190,12 @@ The third kind is a real dependency: DDL execution compiles SQL. Moving the cons
 
 **Engine services that depend on SQL.** These are the prerequisite for the candidate `delosdb-kernel`. `impl.services.cache`, `monitor`, `uuid`, `jce` and `jmx` import no SQL package. Each of the others imports SQL for a specific reason:
 
-- `daemon` is the index-statistics daemon, which is SQL work by nature.
+- `daemon` held the index-statistics daemon, which is SQL work by nature. `IndexStatisticsDaemonImpl` now lives in `impl.sql.catalog`, next to `DataDictionaryImpl`, which creates it; the generic daemon stays in `impl.services.daemon`.
 - `storetypes` adapts store values to SQL types by design.
 - `reflect` used one `CodeGeneration` constant, the generated-class package. That constant is now defined by `ClassFactory` in runtime-api, and `CodeGeneration` keeps it as an alias.
-- `locks` is the only general kernel service that depends on SQL. `Deadlock` and `Timeout` take the `LanguageConnectionContext` from the context stack to get the current `TransactionController`, and they build `TableNameInfo`, which reads the data dictionary, to name the tables, indexes and statements in deadlock and timeout reports. `diag.LockTable` reuses `TableNameInfo`. The lock algorithm itself has no SQL dependency.
+- `locks` was the only general kernel service that depended on SQL. `Deadlock` and `Timeout` take the `LanguageConnectionContext` from the context stack to get the current `TransactionController`, and they build `TableNameInfo`, which reads the data dictionary, to name the tables, indexes and statements in deadlock and timeout reports. `diag.LockTable` reuses `TableNameInfo`. The lock algorithm itself has no SQL dependency.
 
-Separating the lock manager from SQL needs a small runtime-api contract for naming lock objects, with `TableNameInfo` moved to the SQL layer. That adds public module surface and must keep the report text unchanged. This dependency is recorded here as evidence; the execution plan above sets the order of work.
+The lock manager now names lock objects through the runtime-api `LockReportSupport` contract, described below. With that and the moves of `storetypes`, the generated-class constant and the index-statistics daemon, no `impl.services` package imports the SQL layer. `uuid` uses the public `catalog.UUID` interface, a fixed Derby name. This meets the source prerequisite for a candidate `delosdb-kernel`; step 4 still needs the runtime jar, JPMS and provider checks before any Gradle module changes.
 
 **Compatibility-sensitive names by package.** Step 2 asks for these before any move. They were counted for every package of engine, storage-derby, storage-mvcc, derby-store-api and runtime-api, from:
 
