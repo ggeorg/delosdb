@@ -230,6 +230,45 @@ public final class MvccSqlTransactionalDdlTest extends MvccSqlTestSupport {
         }
     }
 
+    public void testUncommittedDropDoesNotBlockAnotherConnectionsCommit() throws Exception {
+        String databaseName = databaseName("mvcc-transactional-ddl-open-drop-other-commit-db");
+        try (Connection connection = openDatabase(databaseName, true)) {
+            executeUpdate(connection,
+                    "create table open_drop_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(connection,
+                    "create table open_drop_other_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(connection, "insert into open_drop_t values (1, 10)");
+        }
+
+        // Reopen so that the next commit must reserve a new commit-sequence block.
+        shutdownDatabase(databaseName);
+        try (Connection dropper = openDatabase(databaseName, false);
+             Connection committer = openDatabase(databaseName, false)) {
+            dropper.setAutoCommit(false);
+            committer.setAutoCommit(false);
+
+            executeUpdate(dropper, "drop table open_drop_t");
+            executeUpdate(committer, "insert into open_drop_other_t values (2, 20)");
+            committer.commit();
+
+            dropper.rollback();
+            assertRows(dropper, "select id, value from open_drop_t order by id", "1|10");
+            assertRows(committer,
+                    "select id, value from open_drop_other_t order by id",
+                    "2|20");
+            dropper.commit();
+            committer.commit();
+        }
+
+        shutdownDatabase(databaseName);
+        try (Connection reopened = openDatabase(databaseName, false)) {
+            assertRows(reopened, "select id, value from open_drop_t order by id", "1|10");
+            assertRows(reopened,
+                    "select id, value from open_drop_other_t order by id",
+                    "2|20");
+        }
+    }
+
     public void testCreateAndDropLifecycleRollBackToSavepoint() throws Exception {
         String databaseName = databaseName("mvcc-transactional-ddl-savepoint-db");
         long createdContainerId;

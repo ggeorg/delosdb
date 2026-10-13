@@ -37,8 +37,15 @@ deletion. The metadata rows themselves continue to use record-level RawStore phy
 Normal status staging does not take the reclamation lock, so maintenance does not restore the old
 metadata-container commit serialization.
 
-Database identity allocation and metadata-control-row updates keep their existing container-level
-serialization. This change does not weaken those authorities.
+Database identity allocation serializes on the metadata control row rather than the whole
+container. A reservation runs in a nested top transaction that takes an intent lock on the
+container and an exclusive record lock on the control row, which is always the container's first
+record. Two allocators therefore still exclude each other, and committed high-water staging and
+initialization, which take the container exclusively, still exclude allocators. Record-level status
+staging and reclamation do not: a DROP or explicit purge that reclaims status rows holds only an
+intent lock on the container until it commits, and an exclusive container lock in the allocator
+would have made every committer that needs a new reservation block wait behind it, including the
+reclaiming transaction's own commit.
 
 ## Concurrent-commit qualification
 

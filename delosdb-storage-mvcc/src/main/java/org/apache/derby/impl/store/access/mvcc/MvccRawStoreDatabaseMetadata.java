@@ -22,8 +22,8 @@ import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
-import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
+import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.raw.log.LogInstant;
 import org.apache.derby.iapi.store.raw.xact.RawTransaction;
@@ -153,7 +153,7 @@ final class MvccRawStoreDatabaseMetadata {
         }
         ContainerHandle container = parent.openContainer(
                 requireContainerKey(),
-                lockingPolicy(parent),
+                MvccRawStorePhysicalLocking.containerExclusive(parent),
                 ContainerHandle.MODE_FORUPDATE);
         if (container == null) {
             throw missingContainer();
@@ -206,15 +206,25 @@ final class MvccRawStoreDatabaseMetadata {
         boolean committed = false;
         try {
             long reserved;
+            // Allocators serialize on the control row, not the container, so
+            // record-level status work held by other transactions (including
+            // this transaction's parent) does not block a reservation.
             ContainerHandle container = nested.openContainer(
                     requireContainerKey(),
-                    lockingPolicy(nested),
+                    MvccRawStorePhysicalLocking.rowLevel(nested),
                     ContainerHandle.MODE_FORUPDATE);
             if (container == null) {
                 throw missingContainer();
             }
             Page page = null;
             try {
+                container.getLockingPolicy().lockRecordForWrite(
+                        nested,
+                        container.makeRecordHandle(
+                                ContainerHandle.FIRST_PAGE_NUMBER,
+                                RecordHandle.FIRST_RECORD_ID),
+                        false,
+                        true);
                 page = container.getFirstPage();
                 validateControlRow(nested, page);
                 StoreDataValue value = MvccRawStoreFormat.longValue(nested, 0L);
@@ -631,7 +641,7 @@ final class MvccRawStoreDatabaseMetadata {
             throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.containerExclusive(transaction),
                 ContainerHandle.MODE_FORUPDATE);
         if (container == null) {
             throw missingContainer();
@@ -667,7 +677,7 @@ final class MvccRawStoreDatabaseMetadata {
             boolean useReservedRecoveryCeiling) throws StandardException {
         ContainerHandle container = transaction.openContainer(
                 key,
-                lockingPolicy(transaction),
+                MvccRawStorePhysicalLocking.containerExclusive(transaction),
                 ContainerHandle.MODE_READONLY);
         if (container == null) {
             throw missingContainer();
@@ -713,6 +723,11 @@ final class MvccRawStoreDatabaseMetadata {
         if (page == null || page.recordCount() <= Page.FIRST_SLOT_NUMBER) {
             throw new IllegalStateException("RawStore MVCC database metadata row is missing");
         }
+        if (page.getRecordHandleAtSlot(Page.FIRST_SLOT_NUMBER).getId()
+                != RecordHandle.FIRST_RECORD_ID) {
+            throw new IllegalStateException(
+                    "RawStore MVCC database metadata row is not the container's first record");
+        }
         Object[] row = template(transaction);
         page.fetchFromSlot(null, Page.FIRST_SLOT_NUMBER, row, null, false);
         if (MvccRawStoreFormat.longAt(row, MAGIC_FIELD) != MAGIC
@@ -753,13 +768,6 @@ final class MvccRawStoreDatabaseMetadata {
                     "RawStore MVCC database metadata container property is invalid: " + persisted,
                     invalid);
         }
-    }
-
-    private static LockingPolicy lockingPolicy(Transaction transaction) {
-        return transaction.newLockingPolicy(
-                LockingPolicy.MODE_CONTAINER,
-                TransactionController.ISOLATION_SERIALIZABLE,
-                true);
     }
 
     private static StandardException missingContainer() {
