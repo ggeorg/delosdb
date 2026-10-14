@@ -46,10 +46,17 @@ the heap, and vacuum removes an entry only after the last version it points to i
 - A store contract in derby-store-api lets a B-tree scan ask the base conglomerate whether the row
   behind an entry is visible at the reader's snapshot. Heap tables do not provide it, so their
   scans are unchanged.
-- Snapshot reads (scans not opened for update) on an index of an MVCC table evaluate every entry,
-  deleted-marked or not, through that check. The check reads the MVCC row directory, not the full
-  row. Scans for update keep today's rule, because DML acts on the locked current row
-  (DEL-TRAVERSAL-001).
+- Snapshot reads on an index of an MVCC table evaluate every entry, deleted-marked or not, through
+  that check, reusing the base controller's snapshot fetch. The SQL layer marks a scan as a
+  snapshot read with an explicit open-mode flag, set only by query result sets that do not scan
+  for update. Constraint checks (`GenericRIChecker`, `ReferencedKeyRIChecker`) open their index
+  scans at isolation levels that queries also use, so isolation cannot tell them apart. They must
+  see the latest committed state, as must DML, which acts on the locked current row
+  (DEL-TRAVERSAL-001). Without the flag a scan therefore keeps today's latest-committed behaviour,
+  and a missing flag can never weaken a constraint check.
+- The check runs after the B-tree has released its leaf latch, on the rows a fetch returns, so no
+  base-table page is latched while a leaf latch is held. With the flag set, the B-tree returns
+  deleted-marked entries and always includes the row location.
 - `BTreeMaxScan` applies the same check while it walks back from the right edge, so `max()` stays
   an edge lookup.
 - Opening such a scan fixes the transaction snapshot, so an index read that finds no entry still
