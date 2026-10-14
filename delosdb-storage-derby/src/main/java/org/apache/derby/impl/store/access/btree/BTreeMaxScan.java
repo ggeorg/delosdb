@@ -506,7 +506,8 @@ public class BTreeMaxScan extends BTreeScan
                     }
                 }
 
-                if (pos.current_leaf.page.isDeletedAtSlot(pos.current_slot))
+                if (!checksVisibility() &&
+                    pos.current_leaf.page.isDeletedAtSlot(pos.current_slot))
                 {
                     this.stat_numdeleted_rows_visited++;
                     pos.current_rh_qualified = false;
@@ -518,6 +519,32 @@ public class BTreeMaxScan extends BTreeScan
                 else
                 {
                     pos.current_rh_qualified = true;
+                }
+
+                if (pos.current_rh_qualified && checksVisibility())
+                {
+                    // Check the candidate against the snapshot without the
+                    // leaf latch. If the snapshot does not see it, continue
+                    // with the entry to its left.
+                    rememberVisibilityEntry(0, pos);
+                    savePositionAndReleasePage();
+                    if (!isVisibleEntry(0))
+                    {
+                        if (!reposition(pos, false))
+                        {
+                            if (!reposition(pos, true))
+                            {
+                                if (SanityManager.DEBUG)
+                                {
+                                    SanityManager.THROWASSERT(
+                                        "Cannot fail with 2nd param true");
+                                }
+                            }
+
+                            pos.current_slot++;
+                        }
+                        continue leaf_loop;
+                    }
                 }
 
                 if (pos.current_rh_qualified)

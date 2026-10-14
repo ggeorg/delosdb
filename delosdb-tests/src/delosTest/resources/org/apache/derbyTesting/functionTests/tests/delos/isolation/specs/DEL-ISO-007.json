@@ -1,0 +1,101 @@
+{
+  "id": "DEL-ISO-007",
+  "description": "A snapshot whose first index read finds no entry stays fixed when a matching row commits.",
+  "category": "snapshot-stability",
+  "providers": [
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table snapshot_index_t (id int primary key, payload varchar(32), bucket int)${providerClause}",
+    "create index snapshot_index_bucket on snapshot_index_t(bucket)",
+    "insert into snapshot_index_t values (1, 'one', 10)",
+    "insert into snapshot_index_t values (2, 'two', 20)"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "empty": {
+          "sql": "select bucket from snapshot_index_t where bucket > 25",
+          "rows": []
+        },
+        "stillEmpty": {
+          "sql": "select bucket from snapshot_index_t where bucket > 25",
+          "rows": []
+        },
+        "count": {
+          "sql": "select count(*) from snapshot_index_t",
+          "rows": [
+            "2"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "insert": {
+          "sql": "insert into snapshot_index_t values (3, 'three', 30)",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "insert-after-empty-first-read",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.empty"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stillEmpty"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.count"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, bucket from snapshot_index_t order by id",
+      "rows": [
+        "1|10",
+        "2|20",
+        "3|30"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table snapshot_index_t"
+  ]
+}

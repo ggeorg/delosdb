@@ -443,7 +443,10 @@ public class BTreeForwardScan extends BTreeScan
                 }
 
 
-                if (pos.current_leaf.page.isDeletedAtSlot(pos.current_slot))
+                // A visibility-checked scan returns deleted entries too and
+                // keeps those the snapshot still sees.
+                if (!checksVisibility() &&
+                    pos.current_leaf.page.isDeletedAtSlot(pos.current_slot))
                 {
                     this.stat_numdeleted_rows_visited++;
                     pos.current_rh_qualified = false;
@@ -467,6 +470,11 @@ public class BTreeForwardScan extends BTreeScan
                         SanityManager.ASSERT(
                             pos.current_leaf.page.getSlotNumber(pos.current_rh)
                                 == pos.current_slot);
+                    }
+
+                    if (checksVisibility())
+                    {
+                        rememberVisibilityEntry(ret_row_count, pos);
                     }
 
                     // Found qualifying row.  Are we done fetching rows for the

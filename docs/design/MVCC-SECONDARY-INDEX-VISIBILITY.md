@@ -1,6 +1,6 @@
 # MVCC secondary-index visibility
 
-Status: design, accepted 2026-10-14. Stage 1 is the next implementation slice.
+Status: design accepted 2026-10-14. Stage 1 implemented 2026-10-14; stage 2 is next.
 
 ## Problem
 
@@ -19,6 +19,9 @@ visibility. A JDBC reproduction with a REPEATABLE READ reader shows three failur
 3. **Unique re-insert rewrites a retained entry.** `BTreeController` reuses a marked-deleted entry
    with the same unique key in place and rewrites its row location. An older snapshot would lose
    the deleted row again.
+4. **A key-moving update leaves two entries for one row.** MVCC row locations are logical row ids
+   that survive updates, so the old entry (marked deleted) and the new entry point at the same row.
+   Whether the row is visible does not tell which entry the snapshot sees.
 
 ## Rejected: forbid covering plans on MVCC tables
 
@@ -43,27 +46,53 @@ the heap, and vacuum removes an entry only after the last version it points to i
 
 ### Stage 1: visibility-checked B-tree scans
 
-- A store contract in derby-store-api lets a B-tree scan ask the base conglomerate whether the row
-  behind an entry is visible at the reader's snapshot. Heap tables do not provide it, so their
-  scans are unchanged.
-- Snapshot reads on an index of an MVCC table evaluate every entry, deleted-marked or not, through
-  that check, reusing the base controller's snapshot fetch. The SQL layer marks a scan as a
-  snapshot read with an explicit open-mode flag, set only by query result sets that do not scan
-  for update. Constraint checks (`GenericRIChecker`, `ReferencedKeyRIChecker`) open their index
-  scans at isolation levels that queries also use, so isolation cannot tell them apart. They must
+- `AccessMethodSnapshotIndexEntries` (derby-store-api) is implemented by the MVCC base controller
+  that a B2I scan already opens for locking. Heap controllers do not implement it, so heap scans are
+  unchanged.
+- An entry is visible when the base row's version visible to the snapshot holds the entry's key
+  (failure 4). The scan fetches that version's indexed columns through the base controller's
+  ordinary snapshot `fetch` and compares them with the entry, so there is no second visibility
+  path. Which base column each index column holds is recorded only in the data dictionary: the
+  engine describes it through `IndexDefinitionSupport`, and `B2I` caches the answer, since a
+  conglomerate's columns never change. Nothing is added to any stored format. An index the
+  dictionary does not describe is not checked.
+- Snapshot reads on an index of an MVCC table evaluate every entry, deleted-marked or not. The SQL
+  layer marks a scan as a snapshot read with `TransactionController.OPENMODE_SNAPSHOT_READ`, set only
+  by query result sets that do not scan for update (`NoPutResultSetImpl.scanOpenMode`). Constraint
+  checks (`GenericRIChecker`, `ReferencedKeyRIChecker`) open their index scans at isolation levels
+  that queries also use, so isolation cannot tell them apart. They must
   see the latest committed state, as must DML, which acts on the locked current row
   (DEL-TRAVERSAL-001). Without the flag a scan therefore keeps today's latest-committed behaviour,
   and a missing flag can never weaken a constraint check.
-- The check runs after the B-tree has released its leaf latch, on the rows a fetch returns, so no
-  base-table page is latched while a leaf latch is held. With the flag set, the B-tree returns
-  deleted-marked entries and always includes the row location.
+- Most entries need no base fetch. The MVCC runtime keeps per-table write state: active writers,
+  a write epoch that moves whenever a writer begins or ends, and the last commit sequence that wrote
+  the table. A transaction registers before it opens the table, or an index through its base table,
+  for update, which precedes every index change, and ends after its commit is published or its
+  rollback completes. When the scan opens with no writer active and no write committed after the
+  snapshot, and the epoch has not moved since, an entry's deleted mark decides it. The scan reads the
+  epoch while it holds the leaf latch: a writer moves the epoch before it changes an entry, so an
+  unchanged epoch means the entry has not changed since the snapshot. This is a table-level form of
+  PostgreSQL's visibility map; it reads no pages.
+- Otherwise the scan copies the entry while the leaf is latched and fetches the base row after the
+  B-tree has released the latch, so no base-table page is latched while a leaf latch is held.
 - `BTreeMaxScan` applies the same check while it walks back from the right edge, so `max()` stays
   an edge lookup.
 - Opening such a scan fixes the transaction snapshot, so an index read that finds no entry still
   fixes the REPEATABLE READ snapshot.
 
-This fixes failure 1 and keeps covering plans. Failure 2 is fixed for entries that have not been
-purged yet.
+This fixes failures 1 and 4 and keeps covering plans. Failure 2 is fixed for entries that have not
+been purged yet.
+
+Stage 1 measurements (matched probe as above, three alternating JVMs per side): `count(*)` 0.81–1.04
+ms against 0.76–1.00 ms before, the range count 188–209 µs against 211–225 µs, the indexed-column
+select 45–48 µs against 40–45 µs, and `max(id)` 6 µs against 5–6 µs. A checked entry costs about
+0.7 µs, one base fetch, so a table with a writer active or committed after the snapshot pays that
+for every entry it reads. Narrowing the write state from tables to base pages, as PostgreSQL's
+visibility map does, is the follow-up if that shows in workloads.
+
+Remaining limits: a held cursor reopened after a commit reads at the new transaction's snapshot,
+and an index whose definition the dictionary does not return (such as one on a declared temporary
+table) is read as before stage 1.
 
 ### Stage 2: retain deleted entries until the vacuum horizon
 
@@ -85,7 +114,9 @@ purged yet.
 
 - Isolation specifications for the reproduced cases: index-only count and max after a commit
   behind the snapshot, delete behind the snapshot through an index, re-insert of a deleted unique
-  key, and an empty first read.
+  key, and an empty first read. Stage 1 adds DEL-ISO-005 (inserts and deletes behind the
+  snapshot), DEL-ISO-006 (key-moving updates, from an older snapshot and from the writing
+  transaction) and DEL-ISO-007 (an empty first read).
 - The heap/MVCC differential fuzz corpus and `delosConcurrencyTests`.
 - Recovery, for stages 2 and 3: retained entries and their vacuum must survive a crash.
 - The matched covering probe and the insert probe. Stage 1 adds one directory check for each

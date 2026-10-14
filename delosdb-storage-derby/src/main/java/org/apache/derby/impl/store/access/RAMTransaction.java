@@ -448,7 +448,8 @@ public class RAMTransaction
                       ContainerHandle.MODE_TEMP_IS_KEPT		        |
                       ContainerHandle.MODE_USE_UPDATE_LOCKS	        |
                       ContainerHandle.MODE_SECONDARY_LOCKED         |
-                      ContainerHandle.MODE_BASEROW_INSERT_LOCKED)) != 0)   
+                      ContainerHandle.MODE_BASEROW_INSERT_LOCKED    |
+                      TransactionController.OPENMODE_SNAPSHOT_READ)) != 0)   
             {
                 SanityManager.THROWASSERT(
                     "Bad open mode to openConglomerate:" + 
@@ -503,7 +504,8 @@ public class RAMTransaction
                    TransactionController.OPENMODE_FOR_LOCK_ONLY |
                    TransactionController.OPENMODE_LOCK_NOWAIT |
                    TransactionController.OPENMODE_LOCK_ROW_NOWAIT |
-                   TransactionController.OPENMODE_SECONDARY_LOCKED)) != 0)
+                   TransactionController.OPENMODE_SECONDARY_LOCKED |
+                   TransactionController.OPENMODE_SNAPSHOT_READ)) != 0)
             {
                 SanityManager.THROWASSERT(
                     "Bad open mode to openScan:" +

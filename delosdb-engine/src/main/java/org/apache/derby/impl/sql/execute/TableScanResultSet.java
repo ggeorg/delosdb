@@ -380,13 +380,10 @@ class TableScanResultSet extends ScanResultSet
 		if (tc == null)
 			tc = activation.getTransactionController();
 
-        int openMode = 0;
-        if (forUpdate)
+        int openMode = scanOpenMode(forUpdate);
+        if (forUpdate && activation.isCursorActivation())
         {
-            openMode = TransactionController.OPENMODE_FORUPDATE;
-
-            if (activation.isCursorActivation())
-                openMode |= TransactionController.OPENMODE_USE_UPDATE_LOCKS;
+            openMode |= TransactionController.OPENMODE_USE_UPDATE_LOCKS;
         }
 
 		scanController = tc.openCompiledScan(

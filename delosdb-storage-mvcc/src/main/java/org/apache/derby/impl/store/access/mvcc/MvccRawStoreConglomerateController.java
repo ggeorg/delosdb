@@ -18,6 +18,7 @@ import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchPagePrefetch;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodSnapshotIndexEntries;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodUniqueConstraintLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
@@ -33,7 +34,7 @@ import org.apache.derby.shared.common.error.StandardException;
 final class MvccRawStoreConglomerateController
         implements ConglomerateController, AccessMethodBaseFetchPagePrefetch,
                 AccessMethodIndexBuildLifecycle, AccessMethodReadCommittedUpdateRecheck,
-                AccessMethodUniqueConstraintLifecycle {
+                AccessMethodSnapshotIndexEntries, AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
@@ -59,6 +60,8 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
     private boolean readCommittedUpdateRecheck;
+    private MvccRawStoreRuntime.TableWriteState snapshotIndexTableWrites;
+    private long snapshotIndexUnchangedEpoch = MvccRawStoreRuntime.TableWriteState.CHANGED;
     private boolean closed;
 
     MvccRawStoreConglomerateController(
@@ -280,6 +283,21 @@ final class MvccRawStoreConglomerateController
             FormatableBitSet validColumns,
             boolean waitForLock) throws StandardException {
         return fetch(loc, destRow, validColumns);
+    }
+
+    @Override
+    public void beginSnapshotIndexRead() throws StandardException {
+        ensureOpen();
+        long snapshotSequence = statementSnapshotLease != null
+                ? statementSnapshotSequence
+                : runtime.context(transactionManager, rawTransaction).snapshotSequence();
+        snapshotIndexTableWrites = runtime.tableWriteState(table);
+        snapshotIndexUnchangedEpoch = snapshotIndexTableWrites.unchangedEpoch(snapshotSequence);
+    }
+
+    @Override
+    public boolean deletedMarkDecides() {
+        return snapshotIndexTableWrites.unchangedSince(snapshotIndexUnchangedEpoch);
     }
 
     @Override

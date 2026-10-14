@@ -29,6 +29,8 @@ import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodSnapshotIndexEntries;
+import org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
 import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -40,6 +42,7 @@ import org.apache.derby.iapi.store.access.RowUtil;
 import org.apache.derby.iapi.store.access.ScanController;
 import org.apache.derby.iapi.store.access.ScanInfo;
 import org.apache.derby.iapi.store.access.StaticCompiledOpenConglomInfo;
+import org.apache.derby.iapi.store.access.TransactionController;
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
@@ -55,6 +58,8 @@ import org.apache.derby.impl.store.access.conglomerate.TemplateRow;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.BackingStoreHashtable;
+
+import java.util.Arrays;
 
 /**
 
@@ -190,6 +195,35 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     private LeafReadSnapshotPrefixHit snapshotPrefixHit;
     private int snapshotPrefixIndex;
 
+    /**
+     * Base controller that decides which entries a snapshot read returns, or
+     * null when the scan returns the entries that are not marked deleted;
+     * visibility_base is the same controller. An entry is visible when the
+     * base row's version visible to the snapshot holds the entry's key: an
+     * update can move a row to a new key while both entries point at the
+     * same row.
+     */
+    private AccessMethodSnapshotIndexEntries visibility_check;
+    private ConglomerateController visibility_base;
+    private int[] visibility_base_columns;
+    private FormatableBitSet visibility_fetch_columns;
+    private StoreDataValue[] visibility_base_row;
+
+    /**
+     * Visibility of the entries the current fetch returned, decided while
+     * the leaf was latched, or VISIBILITY_CHECK when the entry copied into
+     * visibility_rows is checked after the latch is released.
+     */
+    private StoreDataValue[][] visibility_rows;
+    private byte[] visibility_states;
+
+    private static final byte VISIBILITY_HIDDEN = 0;
+    private static final byte VISIBILITY_SHOWN  = 1;
+    private static final byte VISIBILITY_CHECK  = 2;
+
+    /** Rows fetched per group when a visibility-checked scan fills a hash table. */
+    private static final int VISIBLE_SET_GROUP_SIZE = 16;
+
 
     /**
      * A 1 element array to turn fetchNext and fetch calls into 
@@ -224,6 +258,222 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     int[]                   key_column_numbers)
         throws StandardException;
 
+
+    /**
+     * Makes a snapshot read check its entries against the base table when
+     * the base access method versions its rows. Called whenever the scan
+     * opens its base controller. Without the index's base-table columns the
+     * scan cannot compare entries with rows and does not check them.
+     *
+     * @param base_cc the base controller the scan opened for locking
+     *
+     * @exception  StandardException  Standard exception policy.
+     */
+    protected final void checkVisibilityWith(ConglomerateController base_cc)
+        throws StandardException
+    {
+        IndexDefinitionSupport.IndexColumns columns =
+            (getOpenMode() & TransactionController.OPENMODE_SNAPSHOT_READ) != 0
+                    && base_cc instanceof AccessMethodSnapshotIndexEntries
+                ? getConglomerate().indexColumns(getXactMgr()) : null;
+        if (columns == null)
+        {
+            visibility_check = null;
+            visibility_base = null;
+            return;
+        }
+        visibility_check = (AccessMethodSnapshotIndexEntries) base_cc;
+        visibility_base = base_cc;
+        if (visibility_base_columns != columns.baseColumns())
+        {
+            visibility_base_columns = columns.baseColumns();
+            visibility_fetch_columns =
+                new FormatableBitSet(columns.baseColumnCount());
+            for (int column : visibility_base_columns)
+            {
+                visibility_fetch_columns.set(column);
+            }
+            visibility_base_row =
+                new StoreDataValue[columns.baseColumnCount()];
+        }
+        visibility_check.beginSnapshotIndexRead();
+    }
+
+    /**
+     * Whether the scan returns entries regardless of their deleted mark and
+     * keeps those the snapshot sees.
+     */
+    final boolean checksVisibility()
+    {
+        return visibility_check != null;
+    }
+
+    /**
+     * Remembers the entry at the latched position as the index'th entry of
+     * the current fetch.
+     */
+    final void rememberVisibilityEntry(int index, BTreeRowPosition pos)
+        throws StandardException
+    {
+        ensureVisibilityCapacity(index);
+        if (visibility_check.deletedMarkDecides())
+        {
+            visibility_states[index] =
+                pos.current_leaf.page.isDeletedAtSlot(pos.current_slot)
+                    ? VISIBILITY_HIDDEN : VISIBILITY_SHOWN;
+            return;
+        }
+        pos.current_leaf.page.fetchFromSlot(
+            (RecordHandle) null, pos.current_slot, visibilityRow(index),
+            (FetchDescriptor) null, true);
+        visibility_states[index] = VISIBILITY_CHECK;
+    }
+
+    /**
+     * Remembers a full index row from a leaf snapshot, which only returns
+     * entries that are not marked deleted.
+     */
+    final void rememberVisibilityEntry(int index, StoreDataValue[] entry)
+        throws StandardException
+    {
+        ensureVisibilityCapacity(index);
+        if (visibility_check.deletedMarkDecides())
+        {
+            visibility_states[index] = VISIBILITY_SHOWN;
+            return;
+        }
+        StoreValueCopySupport.copyRow(entry, visibilityRow(index), null);
+        visibility_states[index] = VISIBILITY_CHECK;
+    }
+
+    /** Whether the index'th remembered entry is visible to the snapshot. */
+    final boolean isVisibleEntry(int index) throws StandardException
+    {
+        if (visibility_states[index] != VISIBILITY_CHECK)
+        {
+            return visibility_states[index] == VISIBILITY_SHOWN;
+        }
+        StoreDataValue[] entry = visibility_rows[index];
+        if (!visibility_base.fetch(
+                (StoreRowLocation) entry[entry.length - 1],
+                visibility_base_row, visibility_fetch_columns))
+        {
+            return false;
+        }
+        for (int column = 0; column < visibility_base_columns.length; column++)
+        {
+            if (StoreTypeUtil.compare(
+                    entry[column],
+                    visibility_base_row[visibility_base_columns[column]]) != 0)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void ensureVisibilityCapacity(int index)
+    {
+        if (visibility_states == null || index >= visibility_states.length)
+        {
+            int length = visibility_states == null
+                ? index + 1 : Math.max(index + 1, visibility_states.length * 2);
+            visibility_states = visibility_states == null
+                ? new byte[length]
+                : Arrays.copyOf(visibility_states, length);
+            visibility_rows = visibility_rows == null
+                ? new StoreDataValue[length][]
+                : Arrays.copyOf(visibility_rows, length);
+        }
+    }
+
+    private StoreDataValue[] visibilityRow(int index) throws StandardException
+    {
+        StoreDataValue[] row = visibility_rows[index];
+        if (row == null)
+        {
+            row = runtime_mem.get_row_for_export(getRawTran());
+            visibility_rows[index] = row;
+        }
+        return row;
+    }
+
+    /**
+     * fetchRows() into row_array, keeping only the rows a visibility-checked
+     * scan may return. fetchRows() has released the leaf latch when the
+     * check runs. Returns 0 only when the scan is complete.
+     *
+     * @exception  StandardException  Standard exception policy.
+     */
+    private int fetchVisibleRows(
+    StoreDataValue[][]      row_array,
+    StoreRowLocation[]      rowloc_array,
+    long                    max_rowcnt)
+        throws StandardException
+    {
+        while (true)
+        {
+            int fetched =
+                fetchRows(
+                    scan_position, row_array, rowloc_array,
+                    (BackingStoreHashtable) null, max_rowcnt, (int[]) null);
+            if (visibility_check == null || fetched == 0)
+            {
+                return fetched;
+            }
+            int visible = 0;
+            for (int i = 0; i < fetched; i++)
+            {
+                if (isVisibleEntry(i))
+                {
+                    StoreDataValue[] row = row_array[visible];
+                    row_array[visible++] = row_array[i];
+                    row_array[i] = row;
+                }
+            }
+            if (visible > 0)
+            {
+                return visible;
+            }
+        }
+    }
+
+    /**
+     * fetchSet() for a visibility-checked scan: fetch groups, check them
+     * without the leaf latch, and put the visible rows into the hash table.
+     *
+     * @exception  StandardException  Standard exception policy.
+     */
+    private void fetchVisibleSet(
+    long                    max_rowcnt,
+    BackingStoreHashtable   hash_table)
+        throws StandardException
+    {
+        StoreDataValue[][] group = new StoreDataValue[VISIBLE_SET_GROUP_SIZE][];
+        long remaining = max_rowcnt == -1 ? Long.MAX_VALUE : max_rowcnt;
+        while (remaining > 0)
+        {
+            if (group[0] == null)
+            {
+                group[0] = runtime_mem.get_row_for_export(getRawTran());
+            }
+            int fetched = fetchVisibleRows(
+                group, (StoreRowLocation[]) null,
+                Math.min(group.length, remaining));
+            if (fetched == 0)
+            {
+                return;
+            }
+            for (int i = 0; i < fetched; i++)
+            {
+                if (hash_table.putRow(false, group[i], null))
+                {
+                    group[i] = null;
+                }
+            }
+            remaining -= fetched;
+        }
+    }
 
     private void resetSnapshotPointState() {
         snapshotPointHit = null;
@@ -1109,6 +1359,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
         snapshotPointHit = hit;
         StoreValueCopySupport.copyRow(hit.row, row, init_scanColumnList);
+        if (checksVisibility())
+        {
+            rememberVisibilityEntry(0, hit.row);
+        }
         scan_position.current_rh_qualified = true;
         stat_numrows_visited++;
         stat_numrows_qualified++;
@@ -1182,7 +1436,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             return -1;
         }
         LeafReadSnapshotPrefixHit hit = getConglomerate()
-                .searchPrefixLeafReadSnapshot(this, init_startKeyValue);
+                .searchPrefixLeafReadSnapshot(
+                        this, init_startKeyValue, !checksVisibility());
         if (hit == null) {
             return -1;
         }
@@ -1212,8 +1467,12 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             scan_state = SCAN_DONE;
             return 0;
         }
-        StoreValueCopySupport.copyRow(
-                hit.rows[snapshotPrefixIndex++], row, init_scanColumnList);
+        StoreDataValue[] entry = hit.rows[snapshotPrefixIndex++];
+        StoreValueCopySupport.copyRow(entry, row, init_scanColumnList);
+        if (checksVisibility())
+        {
+            rememberVisibilityEntry(0, entry);
+        }
         scan_position.current_rh_qualified = true;
         stat_numrows_visited++;
         stat_numrows_qualified++;
@@ -1611,8 +1870,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             }
 
             // Since btree row don't get updated, the only way a current
-            // position may not qualify is if it got deleted.
+            // position may not qualify is if it got deleted. A snapshot read
+            // returned the row because the snapshot still sees it.
             return(
+                checksVisibility() ||
                 !scan_position.current_leaf.page.isDeletedAtSlot(
                     scan_position.current_slot));
         }
@@ -1692,7 +1953,10 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             // just return null.
 
             // RESOLVE (mikem) - what should be done here?
-            if (scan_position.current_leaf.page.isDeletedAtSlot(
+            // A snapshot read may be positioned on a deleted row that the
+            // snapshot still sees.
+            if (!checksVisibility() &&
+                scan_position.current_leaf.page.isDeletedAtSlot(
                     scan_position.current_slot))
             {
                 if (SanityManager.DEBUG)
@@ -1790,7 +2054,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             SanityManager.ASSERT(this.container != null,
                 "BTreeScan.isCurrentPositionDeleted() called on closed scan.");
         }
-        if (hasSnapshotPointPosition()) {
+        // A snapshot read returned the row because the snapshot still sees
+        // it, whatever its deleted mark.
+        if (hasSnapshotPointPosition() || checksVisibility()) {
             return false;
         }
         try
@@ -1863,13 +2129,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         // Turn this call into a group fetch of a 1 element group.
         fetchNext_one_slot_array[0] = runtime_mem.get_scratch_row(getRawTran());
         boolean ret_val = 
-            fetchRows(
-                scan_position,
-                fetchNext_one_slot_array, 
-                (StoreRowLocation[]) null,
-                (BackingStoreHashtable) null,
-                1,
-                (int[]) null) == 1;
+            fetchVisibleRows(
+                fetchNext_one_slot_array, (StoreRowLocation[]) null, 1) == 1;
 
 
         return(ret_val);
@@ -1909,13 +2170,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         // Turn this call into a group fetch of a 1 element group.
         fetchNext_one_slot_array[0] = row;
         ret_val = 
-            fetchRows(
-                scan_position,
-                fetchNext_one_slot_array, 
-                (StoreRowLocation[]) null,
-                (BackingStoreHashtable) null,
-                1,
-                (int[]) null) == 1;
+            fetchVisibleRows(
+                fetchNext_one_slot_array, (StoreRowLocation[]) null, 1) == 1;
 
         return(ret_val);
     }
@@ -1990,14 +2246,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     StoreRowLocation[]      rowloc_array)
         throws StandardException
     {
-        return(
-            fetchRows(
-                scan_position,
-                row_array, 
-                rowloc_array,
-                (BackingStoreHashtable) null,
-                row_array.length,
-                (int[]) null));
+        return(fetchVisibleRows(row_array, rowloc_array, row_array.length));
     }
 
     public int fetchNextGroup(
@@ -2126,8 +2375,12 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     BackingStoreHashtable   hash_table)
         throws StandardException
     {
-        // System.out.println("fetchSet");
-        
+        if (checksVisibility())
+        {
+            fetchVisibleSet(max_rowcnt, hash_table);
+            return;
+        }
+
         fetchRows(
             scan_position,
             (StoreDataValue[][]) null,

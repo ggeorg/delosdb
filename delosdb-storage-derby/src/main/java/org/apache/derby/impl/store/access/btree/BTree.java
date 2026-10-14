@@ -31,6 +31,7 @@ import org.apache.derby.iapi.services.io.FormatIdUtil;
 import org.apache.derby.iapi.services.io.Storable;
 
 import org.apache.derby.shared.common.error.StandardException;
+import org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.DynamicCompiledOpenConglomInfo;
@@ -335,7 +336,7 @@ public abstract class BTree extends GenericConglomerate
     }
 
     final LeafReadSnapshotPrefixHit searchPrefixLeafReadSnapshot(
-            OpenBTree openBtree, StoreDataValue[] searchKey)
+            OpenBTree openBtree, StoreDataValue[] searchKey, boolean skipDeleted)
             throws StandardException {
         RootRoutingSnapshot root = rootRoutingSnapshot;
         ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
@@ -397,7 +398,7 @@ public abstract class BTree extends GenericConglomerate
         if (leaf == null) {
             return null;
         }
-        StoreDataValue[][] rows = leaf.searchExactPrefix(searchKey, this);
+        StoreDataValue[][] rows = leaf.searchExactPrefix(searchKey, this, skipDeleted);
         if (rows == null || rootRoutingSnapshot != root
                 || snapshots.get(leafPageNumber) != leaf) {
             return null;
@@ -888,6 +889,19 @@ public abstract class BTree extends GenericConglomerate
 
 		id = new ContainerKey(segmentId, containerid);
 	}
+
+    /**
+     * The base-table columns this btree holds, or null when they are
+     * unknown. Only secondary indexes know them.
+     *
+     * @exception StandardException Standard exception policy.
+     **/
+    public IndexDefinitionSupport.IndexColumns indexColumns(
+    TransactionManager  xact_manager)
+        throws StandardException
+    {
+        return(null);
+    }
 
 	/**
 	Drop this btree.

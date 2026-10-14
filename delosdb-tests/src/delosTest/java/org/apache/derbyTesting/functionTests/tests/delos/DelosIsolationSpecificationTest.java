@@ -30,7 +30,8 @@ public final class DelosIsolationSpecificationTest extends MvccSqlTestSupport {
             "/org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/";
 
     public void testSnapshotStabilitySpecifications() throws Exception {
-        runAll("DEL-ISO-001", "DEL-ISO-002", "DEL-ISO-003", "DEL-ISO-004");
+        runAll("DEL-ISO-001", "DEL-ISO-002", "DEL-ISO-003", "DEL-ISO-004",
+                "DEL-ISO-005", "DEL-ISO-006", "DEL-ISO-007");
     }
 
     public void testSavepointSpecifications() throws Exception {

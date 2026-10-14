@@ -195,7 +195,7 @@ class LastIndexKeyResultSet extends ScanResultSet
 		*/
 		if (tc.fetchMaxOnBtree(
 					conglomId,  // conglomerate to open
-					0, 			// open mode
+					scanOpenMode(false),
 					lockMode,
 					isolationLevel,
 					accessedCols,

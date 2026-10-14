@@ -187,10 +187,13 @@ public final class MvccConglomerate
         attach(xactManager);
         MvccRawStoreRuntime currentRuntime = requireRuntime();
         MvccRawStoreTable.Descriptor currentTable = requireTable();
-        if ((openMode & TransactionController.OPENMODE_FOR_LOCK_ONLY) != 0
-                && (openMode & TransactionController.OPENMODE_FORUPDATE) != 0
-                && lockLevel == TransactionController.MODE_TABLE) {
-            currentRuntime.context(xactManager, rawtran).beforeSchemaChange(currentTable);
+        if ((openMode & TransactionController.OPENMODE_FORUPDATE) != 0) {
+            MvccRawStoreTransactionContext context = currentRuntime.context(xactManager, rawtran);
+            context.beforeOpenForUpdate(currentTable);
+            if ((openMode & TransactionController.OPENMODE_FOR_LOCK_ONLY) != 0
+                    && lockLevel == TransactionController.MODE_TABLE) {
+                context.beforeSchemaChange(currentTable);
+            }
         }
         return new MvccRawStoreConglomerateController(
                 currentRuntime,

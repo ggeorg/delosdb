@@ -170,6 +170,7 @@ public class B2IForwardScan extends BTreeForwardScan
                     getOpenMode(), 
                     init_isolation_level, 
                     base_cc_for_locking, this));
+            checkVisibilityWith(base_cc_for_locking);
         }
         
         return(container);
@@ -256,6 +257,7 @@ public class B2IForwardScan extends BTreeForwardScan
             static_info,
             dynamic_info);
 
+        checkVisibilityWith(base_cc_for_locking);
 
         // todo - should just save the isolation level in OpenBtree but
         // save it here for now.

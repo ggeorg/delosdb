@@ -45,6 +45,7 @@ import org.apache.derby.iapi.store.access.RowLocationRetRowSource;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.access.RowSource;
+import org.apache.derby.iapi.store.access.TransactionController;
 import org.apache.derby.iapi.types.DataValueDescriptor;
 import org.apache.derby.iapi.types.LocatedRow;
 import org.apache.derby.iapi.types.Orderable;
@@ -333,6 +334,22 @@ extends BasicNoPutResultSetImpl
 				}
 			}
 		}
+	}
+
+	/**
+	 * Get the store open mode of a query scan. A scan that does not read
+	 * rows to change them reads the transaction's snapshot; constraint
+	 * checks and DML open their scans elsewhere and read the latest
+	 * committed state.
+	 *
+	 * @param forUpdate whether the scan reads rows to change them
+	 * @return open mode
+	 */
+	static int scanOpenMode(boolean forUpdate)
+	{
+		return forUpdate
+			? TransactionController.OPENMODE_FORUPDATE
+			: TransactionController.OPENMODE_SNAPSHOT_READ;
 	}
 
 	/**

@@ -109,6 +109,7 @@ committed key.
 
 ```text
 DEL-ISO-001..004       snapshot stability and documented read anomaly
+DEL-ISO-005..007       snapshot reads through secondary indexes of MVCC tables
 DEL-ISO-010..012       savepoint rollback
 DEL-DEADLOCK-001..004  two-row, conversion, three-session and survivor consistency
 DEL-TRAVERSAL-001..004 update/delete traversal, key movement and row identity
@@ -122,7 +123,7 @@ and weaker scans acquire a fresh statement snapshot lease, while REPEATABLE READ
 transaction snapshot. Provider-specific permutations capture legitimate heap-locking and MVCC
 first-committer-wins differences without weakening final-state invariants.
 
-The catalogue contains 25 stable case IDs. The static gate rejects missing cases, additional
+The catalogue contains 35 stable case IDs. The static gate rejects missing cases, additional
 uninventoried cases, missing categories, stale resources, incomplete provenance, invalid operation
 references, unawaited asynchronous tokens, and registry/authority drift.
 

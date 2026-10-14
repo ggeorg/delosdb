@@ -381,6 +381,7 @@ delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/Bra
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/D_BTreeController.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/LeafControlRow.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/LeafReadSnapshot.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/OpenBTree.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/SearchParameters.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/B2I.java

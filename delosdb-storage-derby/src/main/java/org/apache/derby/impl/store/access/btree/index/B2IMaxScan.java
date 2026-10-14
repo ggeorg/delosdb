@@ -170,5 +170,7 @@ public class B2IMaxScan extends BTreeMaxScan
             undo,
             (StaticCompiledOpenConglomInfo) null,
             (DynamicCompiledOpenConglomInfo) null);
+
+        checkVisibilityWith(base_cc_for_locking);
 	}
 }

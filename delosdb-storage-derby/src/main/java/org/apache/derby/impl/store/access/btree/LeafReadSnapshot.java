@@ -90,7 +90,13 @@ final class LeafReadSnapshot {
         return null;
     }
 
-    StoreDataValue[][] searchExactPrefix(StoreDataValue[] searchKey, BTree btree)
+    /**
+     * The entries matching a key prefix. With {@code skipDeleted} false the
+     * caller must see deleted entries too, so a range containing one is not
+     * served from the snapshot.
+     */
+    StoreDataValue[][] searchExactPrefix(
+            StoreDataValue[] searchKey, BTree btree, boolean skipDeleted)
             throws StandardException {
         if (searchKey == null || searchKey.length == 0 || rows.length == 0) {
             return null;
@@ -140,7 +146,7 @@ final class LeafReadSnapshot {
                 live++;
             }
         }
-        if (live == 0) {
+        if (live == 0 || (!skipDeleted && live != last - first + 1)) {
             return null;
         }
         StoreDataValue[][] matches = new StoreDataValue[live][];

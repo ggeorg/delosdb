@@ -1,0 +1,184 @@
+{
+  "id": "DEL-ISO-005",
+  "description": "Index-only reads and max() keep a snapshot's rows when inserts and deletes commit behind it.",
+  "category": "snapshot-stability",
+  "providers": [
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table snapshot_index_t (id int primary key, payload varchar(32), bucket int)${providerClause}",
+    "create index snapshot_index_bucket on snapshot_index_t(bucket)",
+    "insert into snapshot_index_t values (1, 'one', 10)",
+    "insert into snapshot_index_t values (2, 'two', 20)"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "initialCount": {
+          "sql": "select count(*) from snapshot_index_t",
+          "rows": [
+            "2"
+          ]
+        },
+        "initialRange": {
+          "sql": "select count(*) from snapshot_index_t where bucket between 10 and 40",
+          "rows": [
+            "2"
+          ]
+        },
+        "initialKeys": {
+          "sql": "select bucket from snapshot_index_t where bucket between 10 and 40 order by bucket",
+          "rows": [
+            "10",
+            "20"
+          ]
+        },
+        "initialMax": {
+          "sql": "select max(bucket) from snapshot_index_t",
+          "rows": [
+            "20"
+          ]
+        },
+        "initialMaxId": {
+          "sql": "select max(id) from snapshot_index_t",
+          "rows": [
+            "2"
+          ]
+        },
+        "stableCount": {
+          "sql": "select count(*) from snapshot_index_t",
+          "rows": [
+            "2"
+          ]
+        },
+        "stableRange": {
+          "sql": "select count(*) from snapshot_index_t where bucket between 10 and 40",
+          "rows": [
+            "2"
+          ]
+        },
+        "stableKeys": {
+          "sql": "select bucket from snapshot_index_t where bucket between 10 and 40 order by bucket",
+          "rows": [
+            "10",
+            "20"
+          ]
+        },
+        "stableMax": {
+          "sql": "select max(bucket) from snapshot_index_t",
+          "rows": [
+            "20"
+          ]
+        },
+        "stableMaxId": {
+          "sql": "select max(id) from snapshot_index_t",
+          "rows": [
+            "2"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "insert": {
+          "sql": "insert into snapshot_index_t values (3, 'three', 30)",
+          "updateCount": 1
+        },
+        "delete": {
+          "sql": "delete from snapshot_index_t where id = 2",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "insert-and-delete-behind-snapshot",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.initialCount"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.initialRange"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.initialKeys"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.initialMax"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.initialMaxId"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.insert"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stableCount"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stableRange"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stableKeys"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stableMax"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.stableMaxId"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, bucket from snapshot_index_t order by id",
+      "rows": [
+        "1|10",
+        "3|30"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table snapshot_index_t"
+  ]
+}

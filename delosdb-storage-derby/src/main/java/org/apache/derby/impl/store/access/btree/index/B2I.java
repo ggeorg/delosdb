@@ -32,6 +32,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
+import org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
 import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
 import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
@@ -259,6 +260,13 @@ public class B2I extends BTree
 	**/
 	long baseConglomerateId;
 
+    /**
+     * Base-table columns of this index, read from the data dictionary the
+     * first time a snapshot read needs them. Not stored: the columns of a
+     * conglomerate never change.
+     */
+    private transient volatile IndexDefinitionSupport.IndexColumns indexColumns;
+
 	/**
 	The column id (zero-based integer index) of the column which holds the row 
     location to the base conglomerate.
@@ -409,6 +417,30 @@ public class B2I extends BTree
         }
 
         return(ret_locking_policy);
+    }
+
+    /**
+     * The base-table columns of this index, or null when the data
+     * dictionary of the current connection does not describe it.
+     *
+	 * @exception  StandardException  Standard exception policy.
+     **/
+    public IndexDefinitionSupport.IndexColumns indexColumns(
+    TransactionManager  xact_manager)
+		throws StandardException
+    {
+        IndexDefinitionSupport.IndexColumns columns = indexColumns;
+        if (columns == null)
+        {
+            IndexDefinitionSupport support = IndexDefinitions.support();
+            if (support != null)
+            {
+                columns = support.indexColumns(
+                    xact_manager.findConglomid(getContainerid()));
+                indexColumns = columns;
+            }
+        }
+        return(columns);
     }
 
     /**

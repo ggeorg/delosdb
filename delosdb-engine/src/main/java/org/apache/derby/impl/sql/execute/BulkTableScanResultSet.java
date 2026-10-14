@@ -199,7 +199,7 @@ class BulkTableScanResultSet extends TableScanResultSet
 			tc = activation.getTransactionController();
 		scanController = tc.openCompiledScan(
 				activation.getResultSetHoldability(),
-				(forUpdate ? TransactionController.OPENMODE_FORUPDATE : 0),
+				scanOpenMode(forUpdate),
                 lockMode,
                 isolationLevel,
 				accessedCols,

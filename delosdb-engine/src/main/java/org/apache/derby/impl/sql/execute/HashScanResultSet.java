@@ -291,7 +291,7 @@ public class HashScanResultSet extends ScanResultSet
             hashtable = 
                 tc.createBackingStoreHashtableFromScan(
                     conglomId,          // conglomerate to open
-                    (forUpdate ? TransactionController.OPENMODE_FORUPDATE : 0),
+                    scanOpenMode(forUpdate),
                     lockMode,
                     isolationLevel,
                     accessedCols, 

@@ -18,9 +18,11 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglom
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodConglomerateProperties.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodIndexBuildLifecycle.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodSnapshotIndexEntries.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodTransactionLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodUniqueConstraintLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/IndexDefinitionSupport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/ArchivedUndoPage.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseCommitTimingSnapshot.java
@@ -146,6 +148,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockReports.ja
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineContextKernelSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineMonitorKernelSupport.java
+delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/EngineIndexDefinitionSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/EngineInterruptStatusKernelSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/conn/EngineLockReportSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/AggregateResultSetParameters.java
@@ -214,6 +217,7 @@ delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexOpenRequest.ja
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexProvider.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/RowReference.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/package-info.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/IndexDefinitions.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/D_DiagnosticFormatting.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/DerbyHeapContainerFiles.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/DerbyHeapStorageDiagnostics.java

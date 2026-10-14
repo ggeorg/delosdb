@@ -253,6 +253,21 @@ public interface TransactionController
     static final int OPENMODE_LOCK_ROW_NOWAIT       = 0x00008000;
 
     /**
+     * The scan reads the transaction's snapshot rather than the latest
+     * committed state.
+     * <p>
+     * Query result sets that do not scan for update set this mode. A
+     * secondary index whose base access method versions its rows while the
+     * index entries are not versioned then returns only the entries whose
+     * base row is visible to the snapshot, including entries that a later
+     * delete has marked. Constraint checks and DML do not set it: they act
+     * on the latest committed state. Access methods without versioned rows
+     * ignore it. Only the access layer reads this mode; RawStore ignores the
+     * bit, so ContainerHandle has no matching constant.
+     **/
+    static final int OPENMODE_SNAPSHOT_READ         = 0x00010000;
+
+    /**
      * Constants used for the countOpen() call.
      **/
     public static final int OPEN_CONGLOMERATE   = 0x01;

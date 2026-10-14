@@ -19,6 +19,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -88,6 +89,8 @@ final class MvccRawStoreRuntime {
     private long gen2TransactionIdReservationLimit;
     private final Set<ContainerKey> gen2A1Tables = ConcurrentHashMap.newKeySet();
     private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
+            new ConcurrentHashMap<>();
+    private final Map<ContainerKey, TableWriteState> tableWriteStates =
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -202,6 +205,7 @@ final class MvccRawStoreRuntime {
 
     void unregisterTable(MvccRawStoreTable.Descriptor table) {
         gen2A1Tables.remove(table.metadataContainer());
+        tableWriteStates.remove(table.metadataContainer());
         clearCurrentRowAnchors(table);
         MvccRawStoreMaintenanceService maintenance = maintenanceService;
         if (maintenance != null) {
@@ -556,6 +560,12 @@ final class MvccRawStoreRuntime {
         return new TableReadBoundary(readLock);
     }
 
+    TableWriteState tableWriteState(MvccRawStoreTable.Descriptor table) {
+        return tableWriteStates.computeIfAbsent(
+                table.metadataContainer(),
+                ignored -> new TableWriteState());
+    }
+
     TableMaintenanceBoundary enterVacuum(MvccRawStoreTable.Descriptor table) {
         ReentrantReadWriteLock.WriteLock writeLock = tableMaintenanceBoundary(table).writeLock();
         writeLock.lock();
@@ -898,6 +908,7 @@ final class MvccRawStoreRuntime {
             }
         }
         tableMaintenanceBoundaries.clear();
+        tableWriteStates.clear();
         activeTransactionIds.clear();
         commitPublicationLock.lock();
         try {
@@ -1003,6 +1014,61 @@ final class MvccRawStoreRuntime {
                 closed = true;
                 readLock.unlock();
             }
+        }
+    }
+
+    /**
+     * Writer activity on one table. A snapshot read of a secondary index
+     * checks each entry against the base row unless no transaction has
+     * written the table since the snapshot: then an entry is visible exactly
+     * when it is not marked deleted. Transactions register before they open
+     * the table or its indexes for update, and end after their commit is
+     * published or their rollback is complete.
+     */
+    static final class TableWriteState {
+        /** Epoch value meaning the table changed after the snapshot. */
+        static final long CHANGED = -1L;
+
+        private final AtomicInteger activeWriters = new AtomicInteger();
+        private final AtomicLong epoch = new AtomicLong();
+        private final AtomicLong lastCommitSequence = new AtomicLong();
+
+        private TableWriteState() {
+        }
+
+        void beginWrite() {
+            activeWriters.incrementAndGet();
+            epoch.incrementAndGet();
+        }
+
+        /** Records a writer's commit sequence before its commit is published. */
+        void recordCommit(long commitSequence) {
+            lastCommitSequence.accumulateAndGet(commitSequence, Math::max);
+        }
+
+        void endWrite() {
+            epoch.incrementAndGet();
+            activeWriters.decrementAndGet();
+        }
+
+        /**
+         * The current epoch if no transaction is writing the table and every
+         * committed write is visible at {@code snapshotSequence}, else
+         * {@link #CHANGED}.
+         */
+        long unchangedEpoch(long snapshotSequence) {
+            long before = epoch.get();
+            if (activeWriters.get() != 0
+                    || lastCommitSequence.get() > snapshotSequence
+                    || epoch.get() != before) {
+                return CHANGED;
+            }
+            return before;
+        }
+
+        /** Whether no writer has begun or ended since {@code unchangedEpoch}. */
+        boolean unchangedSince(long unchangedEpoch) {
+            return unchangedEpoch != CHANGED && epoch.get() == unchangedEpoch;
         }
     }
 
