@@ -84,6 +84,7 @@ delosdb-engine/src/main/java/org/apache/derby/iapi/jdbc/BrokeredConnection.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/jdbc/BrokeredPreparedStatement.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/jdbc/DRDAServerStarter.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/sql/Activation.java
+delosdb-engine/src/main/java/org/apache/derby/iapi/sql/compile/CodeGeneration.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/sql/conn/LanguageConnectionContext.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/sql/depend/ProviderList.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/sql/dictionary/ConglomerateDescriptor.java
