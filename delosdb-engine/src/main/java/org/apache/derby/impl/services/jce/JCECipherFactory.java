@@ -48,7 +48,6 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.DESKeySpec;
 import javax.crypto.spec.SecretKeySpec;
-import org.apache.derby.iapi.store.raw.RawStoreFactory;
 
 import org.apache.derby.io.StorageFactory;
 import org.apache.derby.io.StorageFile;
@@ -594,9 +593,9 @@ final class JCECipherFactory implements CipherFactory
 
                 // Set two new properties to allow for future changes to the log and data encryption
                 // schemes. This property is introduced in version 10 , value starts at 1.
-                persistentProperties.put(RawStoreFactory.DATA_ENCRYPT_ALGORITHM_VERSION,
+                persistentProperties.put(DATA_ENCRYPT_ALGORITHM_VERSION,
                                          String.valueOf(1));
-                persistentProperties.put(RawStoreFactory.LOG_ENCRYPT_ALGORITHM_VERSION,
+                persistentProperties.put(LOG_ENCRYPT_ALGORITHM_VERSION,
                                          String.valueOf(1));
             }
 
@@ -680,7 +679,7 @@ final class JCECipherFactory implements CipherFactory
 			//
 			generatedKey = generateUniqueBytes();
 
-			persistentProperties.put(RawStoreFactory.ENCRYPTED_KEY, 
+			persistentProperties.put(ENCRYPTED_KEY, 
                                            saveSecretKey(generatedKey, bootPassword));
 
 		}
@@ -731,7 +730,7 @@ final class JCECipherFactory implements CipherFactory
 
 		// recover the generated secret encryption key from the
 		// services.properties file and the user key.
-		String keyString = properties.getProperty(RawStoreFactory.ENCRYPTED_KEY);
+		String keyString = properties.getProperty(ENCRYPTED_KEY);
 		if (keyString == null)
 			throw StandardException.newException(errorState);
 

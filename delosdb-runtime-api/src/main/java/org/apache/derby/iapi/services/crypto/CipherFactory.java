@@ -53,6 +53,28 @@ public interface CipherFactory
     /** Minimum bootPassword length */
     public static final int MIN_BOOTPASS_LENGTH = 8;
 
+    /**
+        The service property that holds the encrypted data encryption key.
+        It is really the encrypted key, but the property is called the
+        encryptedBootPassword.
+     */
+    public static final String ENCRYPTED_KEY = "encryptedBootPassword";
+
+    /**
+        The service property that holds the version of the scheme used to
+        encrypt data, so that the scheme can change. Introduced in version 10;
+        values start at 1.
+     */
+    public static final String DATA_ENCRYPT_ALGORITHM_VERSION =
+        "data_encrypt_algorithm_version";
+
+    /**
+        The service property that holds the version of the scheme used to
+        encrypt the log. Introduced in version 10; values start at 1.
+     */
+    public static final String LOG_ENCRYPT_ALGORITHM_VERSION =
+        "log_encrypt_algorithm_version";
+
 	/**
 		Get a CipherProvider that either Encrypts or Decrypts.
 	 */

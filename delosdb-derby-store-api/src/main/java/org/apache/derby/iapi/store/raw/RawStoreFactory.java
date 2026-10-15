@@ -23,6 +23,7 @@ package org.apache.derby.iapi.store.raw;
 
 import org.apache.derby.iapi.services.daemon.DaemonService;
 import org.apache.derby.iapi.services.context.ContextManager;
+import org.apache.derby.iapi.services.crypto.CipherFactory;
 import org.apache.derby.iapi.services.locks.CompatibilitySpace;
 import org.apache.derby.iapi.services.locks.LockFactory;
 
@@ -320,30 +321,20 @@ public interface RawStoreFactory extends Corruptable {
     */
     public static final String ENCRYPTION_BLOCKSIZE = "derby.encryptionBlockSize";
 
-    /**
+    /** @see CipherFactory#DATA_ENCRYPT_ALGORITHM_VERSION */
+    public static final String DATA_ENCRYPT_ALGORITHM_VERSION =
+        CipherFactory.DATA_ENCRYPT_ALGORITHM_VERSION;
 
-        This variable is used to store the encryption scheme to allow
-        for any future changes in encryption schemes of data 
-        This property has been introduced in version 10
-        Value starts at 1
-     */
-    public static final String DATA_ENCRYPT_ALGORITHM_VERSION="data_encrypt_algorithm_version";
-
-    /**
-                Store the encryption scheme used for logging
-        This will allow for any future changes in encryption schemes of logs
-        This variable has been introduced in version 10 and value starts at 1.
-     */
-    public static final String LOG_ENCRYPT_ALGORITHM_VERSION="log_encrypt_algorithm_version";
+    /** @see CipherFactory#LOG_ENCRYPT_ALGORITHM_VERSION */
+    public static final String LOG_ENCRYPT_ALGORITHM_VERSION =
+        CipherFactory.LOG_ENCRYPT_ALGORITHM_VERSION;
 
     /**
-        If dataEncryption is true, store the encrypted key in
-        services.properties file. It is really the encrypted
-        key, but the property key is called the encryptedBootPassword.
-
+        If dataEncryption is true, the encrypted key is stored in
+        service.properties under this name.
+        @see CipherFactory#ENCRYPTED_KEY
      */
-    public static final String ENCRYPTED_KEY = 
-        "encryptedBootPassword";
+    public static final String ENCRYPTED_KEY = CipherFactory.ENCRYPTED_KEY;
 
 
     /**

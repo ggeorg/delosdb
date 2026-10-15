@@ -207,7 +207,6 @@ cc93c72b73abf369a795fcb7192e383a96d61a08d6f616abfbe3c7a914d5da35	delosdb-derby-s
 7b2c8f8b216f499ba5418bb52a4e42d332c17941d9e7f34d131c01c91cdd107a	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/Loggable.java
 80e7a70eabb9c84da9c953567c2bc966b289f373a525876e2a8968947b44137e	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/PageKey.java
 0a1c5892da227e475559f65cd02d526de99142629c04f182b2e913aa3b9cd58d	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/PageTimeStamp.java
-c703a0d57a153b7ed698dbe9640eacbb5e0592cb84b8fae8b16ed6be53d50db4	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/RawStoreFactory.java
 06467587822129f7682e17d57271de5a3505c0a6c2978ec9b552bae412a924ed	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/RePreparable.java
 d4d0bbbd7c8977ded9268256c29ecb2a4695b0afeaed8f44ae9d857cc57babf5	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/RecordHandle.java
 026c360dbc9448af37da0a5a1fc9e802d1b6a72192aca4615442d408d98aa472	delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/RowLock.java
@@ -536,7 +535,6 @@ c7010bb849cd61bbb4b3dab5e3c0026b33da7a4b83b2a1278850b22b3d0521ea	delosdb-engine/
 1527024773160be51702628ffc93a04fe3c080c709be48dde659699bf6082eb6	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ReplacementPolicy.java
 cd8f74575745c1cba81901627ec006147aeec225423b02b9490e9494826f74c0	delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/ServiceRecord.java
 ad7ebed62c3a8dea0adbed886437ebf65762b38c70f09ff89be145ddb702451c	delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/SingleThreadDaemonFactory.java
-cbd5176b613cc6d16a4d4178e4e0aadc432bc1eb61432922daf1c83a921d9f23	delosdb-engine/src/main/java/org/apache/derby/impl/services/jce/JCECipherFactory.java
 8dac8645eeb528b604632a9406c91da03984d0f95ef5f585dcd36f1362cff267	delosdb-engine/src/main/java/org/apache/derby/impl/services/jce/JCECipherFactoryBuilder.java
 1a12c117d2b75e7576bbab37bfbb0fb1ef217c8a449f849e13fe8bf41950a45b	delosdb-engine/src/main/java/org/apache/derby/impl/services/jce/JCECipherProvider.java
 22ec55a4fe71c3a178cd3d500eaeb2e7e6da51013bb1cdc8185c6422628d112f	delosdb-engine/src/main/java/org/apache/derby/impl/services/jmxnone/NoManagementService.java
@@ -999,7 +997,6 @@ af6c3201a85a2c9d351e8051bbf594d1048167ddf950d92e45f6104bc66b5219	delosdb-runtime
 3f5e8dd76390dac7881b4114dab3920ea6976ff504effad0f08c8a7d03f51377	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/LocalField.java
 6c5e55bd7340968edfaa8da5c39a4ceb5a884fbccfc4d3c901e0370e0956ab65	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/Context.java
 e8cea2b575574c83eea947118ded11fbeb1ee7dcd4f17207e11c00e27aac09f5	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/ContextImpl.java
-c27b45697beb63f5f18ede18afeef2c84965e104eaa5fbd318c4e9c9475a264a	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/crypto/CipherFactory.java
 0dd73d1eafc61529210b30af8d6916fa7e9f738fdb132980d7caa27076d563f8	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/crypto/CipherFactoryBuilder.java
 2a32622293323ee919ab5e41a2760fbd3b0ceb9d124ab161fc0ead20f3ea066a	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/crypto/CipherProvider.java
 7a1020dbe7a6b5072c54f0c04ce1ba3f3d1eb4de2c0d521459196b140d4701ae	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/daemon/DaemonFactory.java

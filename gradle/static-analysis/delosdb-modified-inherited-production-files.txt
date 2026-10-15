@@ -65,6 +65,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglom
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/ContainerKey.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/LogicalUndoable.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/Page.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/RawStoreFactory.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/StreamContainerHandle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/Transaction.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/UndoHandler.java
@@ -144,6 +145,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/CacheEntry.jav
 delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCache.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCacheFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/BasicDaemon.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/jce/JCECipherFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/jmx/JMXManagementService.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/AbstractPool.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/ConcurrentLockSet.java
@@ -322,6 +324,7 @@ delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/Method
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/ContextManager.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/ContextService.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/SystemContext.java
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/crypto/CipherFactory.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/daemon/IndexStatisticsDaemon.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FileUtil.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/FormatIdInputStream.java
