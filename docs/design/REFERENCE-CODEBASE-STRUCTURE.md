@@ -94,7 +94,7 @@ The existing module identities remain authoritative until each migration is veri
 |---|---|---|
 | commons, annotations, runtime-api | foundation/runtime contracts, with optional annotations merged only if compatibility packaging permits | Classify shared messages, errors, serialization, contexts and service APIs; retain module/jar facades where supported |
 | derby-store-api | `delosdb-store-contracts` | Preserve neutral page/access/transaction/type contracts and their public binary names |
-| engine service implementations | `delosdb-kernel` | Remove SQL implementation dependencies; classify storage-specific lock/cache fast paths rather than assuming they are generic |
+| engine service implementations | packages of the engine (see the consolidation below; `delosdb-kernel` is withdrawn) | Remove SQL implementation dependencies; classify storage-specific lock/cache fast paths rather than assuming they are generic |
 | engine SQL/catalog/types/JDBC | `delosdb-sql` | Keep compiler and executor together initially; extract neutral models before separate compiler/executor modules |
 | storage-derby's `impl.store.raw` | `delosdb-rawstore` | Preserve one persistence authority and lifecycle; separate cross-access helpers into real contracts |
 | storage-derby's `impl.store.access` | `delosdb-access-heap` | Remove direct implementation coupling to helpers such as `RawStorePreparedRow` and `HeapPageReadImageAccess`; retain transaction integration |
@@ -147,7 +147,50 @@ The objective is an educational reference database that can be understood and fo
 
 Completed so far: local reference-engine/source-owner assessment; source guide and compatibility-preserving target structure; occupancy Gradle registration extraction; worker process/command/configuration; shared benchmark model; worker and per-case lifecycles; fixtures/diagnostics; concurrent SQL execution and verification/restoration; legacy experiment families; parent container/host/command/report owners. The core query/storage dependency map and compatibility-sensitive name counts are recorded below. Two Delos-authored package families have moved within `org.apache.derby`: `impl.services.storetypes` and `impl.store.access.provider`. The lock manager reaches the SQL layer only through a runtime-api contract. Gradle module boundaries are unchanged.
 
-The lock manager now reaches neither SQL nor the store contracts: lock-object names come through `LockReportSupport` and the store's fast-path lock modes through `LockFastPathSupport`. The cache no longer imports them either: the store asks for lock-free keeps when it creates its container cache. The cipher factory takes its property names from its own contract. No `impl.services` package now imports the SQL layer or the store contracts, so the source boundary for a candidate `delosdb-kernel` is in place. The next implementation action is step 4 for that module: the runtime jar, JPMS exports and provider checks. Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
+The lock manager now reaches neither SQL nor the store contracts: lock-object names come through `LockReportSupport` and the store's fast-path lock modes through `LockFastPathSupport`. The cache no longer imports them either: the store asks for lock-free keeps when it creates its container cache. The cipher factory takes its property names from its own contract. No `impl.services` package now imports the SQL layer or the store contracts. A separate `delosdb-kernel` project is no longer proposed: it would be one more project compiled into the engine module, which adds build machinery without JPMS isolation. Step 4 now follows the engine build consolidation below; its first action is the package-boundary check. Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
+
+## Engine build consolidation (proposed)
+
+Status: design, 2026-10-15; open decisions are marked. Nothing here is implemented yet.
+
+**Why.** Derby 10.17.1.0 compiles SQL, transactions, locks, access methods and RawStore together into one JPMS module, `org.apache.derby.engine`. DelosDB keeps `derby-store-api`, `storage-derby` and `storage-mvcc` as separate Gradle projects and then patches their classes into that same module: `derby-store-api` through `enginePatch`, the two storage projects through `derbyRuntimePatchElements`, all passed to `--patch-module` when the engine compiles. JPMS cannot isolate packages inside one module, so these projects add build concepts (patch configurations, per-project class directories, test-support patch lists) without runtime isolation. What they do give is compile-time enforcement: each storage project compiles only against `commons`, `runtime-api`, `annotations` and `derby-store-api`.
+
+**Target.** One engine Gradle project, matching the one engine module, with ownership expressed by packages and enforced by an executable package-boundary check. Projects that are real deployment or JPMS boundaries stay: `commons`, `client`, `server`, `tools`, `runner`, `optionaltools`, `spi`, `annotations`. `runtime-api` is a real JPMS module (`io.github.ggeorg.delosdb.runtime.api`); whether it stays separate is decided after its consumers are listed, not as part of this consolidation.
+
+**Projects merged into the engine project.**
+
+| Project | Java files | Packages | Resources | Artifact today |
+|---|---|---|---|---|
+| `derby-store-api` | 180 | `iapi.store.**` | none | `delosdb-derby-store-api.jar`, an assembled support artifact |
+| `storage-derby` | 247 | `impl.store.**` except `impl.store.access.mvcc` | `META-INF/services/...StoreRowLocationFactory` | `delosdb-storage-derby.jar`, build-only |
+| `storage-mvcc` | 32 | `impl.store.access.mvcc` | `META-INF/services/...ExternalAccessMethodProvider`, `...DelosStorageDiagnostics` | `delosdb-storage-mvcc.jar`, a required provider artifact, also merged into `derby.jar` |
+
+Source files move with `git mv` to the same package paths under `delosdb-engine/src/main/java`, so binary names, stored format ids, `modules.properties` entries and provider class names do not change. Service files with the same path are merged into one file listing every provider; today the `derby.jar` assembly merges them, afterwards the source tree holds the merged file. `storage-derby`'s single test (`AccessMethodTransactionLifecycleTest`) moves to the engine project's tests. Generated code (the SQL parser, messages, product info) is already produced by the engine project and is unaffected.
+
+**Package-boundary check (first, before any move).** The check replaces what the Gradle projects enforce today, and it runs on the current tree first, where it must pass by construction. It extends the existing `delosModuleDependencyBoundaryStaticAnalysis` audit with a checked manifest of package groups and allowed imports:
+
+| Group | Packages | May import, besides `commons`, `runtime-api`, `annotations` and the JDK |
+|---|---|---|
+| store contracts | `iapi.store.**` (today's `derby-store-api`) | nothing else in the engine |
+| RawStore and heap | `impl.store.**` except `impl.store.access.mvcc`: RawStore, log, transactions, replication, and the heap, B-tree, sort and conglomerate access packages (today's `storage-derby`) | store contracts |
+| MVCC | `impl.store.access.mvcc` | store contracts |
+| services | `impl.services.**` | the engine-owned packages listed in the step 4 evidence (`catalog.UUID`, `iapi.security`, `iapi.services.jmx`, `mbeans`) until each is resolved |
+| SQL and the rest of the engine | everything else | store contracts, services; never RawStore, heap or MVCC implementation |
+
+The current forbidden project edges (engine → MVCC, MVCC → engine implementation, `storage-derby` → MVCC) become forbidden group edges. The rows are derived from today's project dependencies and from the measured imports; the check, not this table, is the authority.
+
+**Published artifacts.** `derby.jar` keeps exactly its current class list, which the consolidation must show by comparing the class lists before and after. `delosdb-storage-derby.jar` (build-only) and `delosdb-derby-store-api.jar` (assembled support) disappear unless a consumer is found. *Open decision:* `delosdb-storage-mvcc.jar`. The target manifest lists it as a required provider artifact, and `verifyDelosRuntimeStorageProviders` checks it, yet its classes are already in `derby.jar` and the two are never on one classpath. Either keep it as a jar filtered from the engine's `impl.store.access.mvcc` package, or retire it, keeping the `ExternalAccessMethodProvider` discovery mechanism for the deferred `delosdb-search-lucene` provider.
+
+**What changes with the move.** `settings.gradle`; the engine build (the patch configurations go); `delosdb-runtime-artifacts.gradle` and `verifyDelosRuntimeStorageProviders`; the v1 target manifest and its forbidden edges; `module-dependency-tree.py` ownership; the path-keyed inventories (about 340 lines for `storage-derby`, 260 for `storage-mvcc` and 190 for `derby-store-api`, in the frozen Derby baseline, the modified-inherited and authored lists and the provenance files); the test-support patch lists in `delosdb-tests/build.gradle`; and the documents that name the projects (`V1-MODULE-ARCHITECTURE.md`, `ARCHITECTURE.md`, `STORAGE-ARCHITECTURE.md`, `BUILDING.md`, `CONTRIBUTING.md`, `GOVERNANCE.md`, `README.md`). The move is a relocation only: no behaviour, algorithm or format change in the same commit.
+
+**Acceptance.** The package-boundary check passes before and after. `derby.jar`'s class list and service files are unchanged. Classpath and module-path boot, `verifyDelosRuntimeStorageProviders` (as revised), `derbyRuntimeSmoke` and `s0CloseoutVerification` pass. JDBC and DRDA (`derbyNetworkTests`), recovery (`delosRecoveryTests`), reopening existing heap and MVCC databases, and the full gates pass, with the known failures unchanged.
+
+**Order.**
+1. Add the package-boundary check and its manifest; it passes on today's tree.
+2. Decide the `delosdb-storage-mvcc.jar` question.
+3. Merge `derby-store-api` into the engine project, then `storage-derby`, then `storage-mvcc`, one commit each, each with its inventories and the acceptance checks.
+4. Update the module documents and the target manifest.
+5. Then list `runtime-api`'s consumers and decide whether it stays a separate module.
 
 ## Core query and storage dependency map
 
