@@ -23,11 +23,29 @@ public final class CachedPageValidityTestSupport {
     private CachedPageValidityTestSupport() {
     }
 
+    /** The container cache of the connection's database. */
+    public static CacheManager containerCache(Connection connection) throws Exception {
+        return dataFactory(rawTransaction(connection)).getContainerCache();
+    }
+
+    /** The page cache of the connection's database. */
+    public static CacheManager pageCache(Connection connection) throws Exception {
+        return dataFactory(rawTransaction(connection)).getPageCache();
+    }
+
+    private static RawTransaction rawTransaction(Connection connection) throws Exception {
+        return (RawTransaction) ((TransactionManager) ((EmbedConnection) connection)
+                .getLanguageConnection().getTransactionExecute()).getRawStoreXact();
+    }
+
+    private static BaseDataFileFactory dataFactory(RawTransaction raw) {
+        return (BaseDataFileFactory) raw.getDataFactory();
+    }
+
     /** Exercise a non-first allocation page with both warm and cold cache. */
     public static String verifyAllocationPageExclusion(Connection connection) throws Exception {
-        RawTransaction raw = (RawTransaction) ((TransactionManager) ((EmbedConnection) connection)
-                .getLanguageConnection().getTransactionExecute()).getRawStoreXact();
-        CacheManager cache = ((BaseDataFileFactory) raw.getDataFactory()).getPageCache();
+        RawTransaction raw = rawTransaction(connection);
+        CacheManager cache = dataFactory(raw).getPageCache();
         java.util.Properties properties = new java.util.Properties();
         properties.setProperty("derby.storage.pageSize", "4096");
         long id = raw.addContainer(0, ContainerHandle.DEFAULT_ASSIGN_ID,
@@ -95,11 +113,8 @@ public final class CachedPageValidityTestSupport {
      * success, otherwise a description of the failure. The caller rolls back.
      */
     public static String verifyDeallocatedCachedPage(Connection connection) throws Exception {
-        EmbedConnection embedded = (EmbedConnection) connection;
-        TransactionManager manager =
-                (TransactionManager) embedded.getLanguageConnection().getTransactionExecute();
-        RawTransaction raw = (RawTransaction) manager.getRawStoreXact();
-        CacheManager pageCache = ((BaseDataFileFactory) raw.getDataFactory()).getPageCache();
+        RawTransaction raw = rawTransaction(connection);
+        CacheManager pageCache = dataFactory(raw).getPageCache();
 
         long containerId = raw.addContainer(0, ContainerHandle.DEFAULT_ASSIGN_ID,
                 ContainerHandle.MODE_DEFAULT, null, 0);

@@ -140,7 +140,9 @@ delosdb-engine/src/main/java/org/apache/derby/impl/jdbc/authentication/Authentic
 delosdb-engine/src/main/java/org/apache/derby/impl/load/ColumnInfo.java
 delosdb-engine/src/main/java/org/apache/derby/impl/load/Import.java
 delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportAbstract.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/CacheEntry.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCache.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCacheFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/BasicDaemon.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/jmx/JMXManagementService.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/AbstractPool.java
@@ -312,6 +314,7 @@ delosdb-osgi-stub/src/main/java/org/osgi/framework/Constants.java
 delosdb-osgi-stub/src/main/java/org/osgi/framework/FrameworkEvent.java
 delosdb-runner/src/main/java/module-info.java
 delosdb-runtime-api/src/main/java/module-info.java
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/CacheFactory.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/CacheManager.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/ClassSize.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/ClassSizeCatalog.java

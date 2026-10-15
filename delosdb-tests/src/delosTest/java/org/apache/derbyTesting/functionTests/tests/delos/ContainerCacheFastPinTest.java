@@ -6,10 +6,30 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import junit.framework.TestCase;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+
 import org.apache.derby.impl.services.cache.ContainerCacheFastPinTestSupport;
+import org.apache.derby.impl.store.raw.data.CachedPageValidityTestSupport;
 
 /** Correctness proofs for the stable ContainerCache fast-pin path. */
 public final class ContainerCacheFastPinTest extends TestCase {
+    public void testStoreAsksForLockFreeKeepsOnItsContainerCache() throws Exception {
+        String url = "jdbc:derby:memory:container-cache-kind";
+        try (Connection connection = DriverManager.getConnection(url + ";create=true")) {
+            ContainerCacheFastPinTestSupport.verifyStoreCachesKeepAsDeclared(
+                    CachedPageValidityTestSupport.containerCache(connection),
+                    CachedPageValidityTestSupport.pageCache(connection));
+        } finally {
+            try {
+                DriverManager.getConnection(url + ";drop=true");
+            } catch (SQLException expected) {
+                // Dropping an in-memory database reports its shutdown.
+            }
+        }
+    }
+
     public void testEvictionFreezeCannotCrossActiveFastPin() {
         ContainerCacheFastPinTestSupport.verifyFastPinEvictionHandoff();
     }

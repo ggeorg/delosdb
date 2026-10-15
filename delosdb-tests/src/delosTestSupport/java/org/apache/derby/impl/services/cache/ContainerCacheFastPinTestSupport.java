@@ -191,9 +191,20 @@ public final class ContainerCacheFastPinTestSupport {
         }
     }
 
+    /** The store asks for lock-free keeps on its container cache only. */
+    public static void verifyStoreCachesKeepAsDeclared(
+            CacheManager containerCache, CacheManager pageCache) {
+        if (!((ConcurrentCache) containerCache).lockFreeKeepsForTesting()) {
+            throw new AssertionError("the container cache does not keep lock-free");
+        }
+        if (((ConcurrentCache) pageCache).lockFreeKeepsForTesting()) {
+            throw new AssertionError("the page cache keeps lock-free");
+        }
+    }
+
     public static void verifyConcurrentCacheLifecycle() throws Exception {
         ConcurrentCache cache = new ConcurrentCache(
-                new TestCacheableFactory(), "ContainerCache", 16, 64);
+                new TestCacheableFactory(), "ContainerCache", 16, 64, true);
         ContainerKey key = new ContainerKey(0, 168);
         Cacheable first = cache.find(key);
         cache.release(first);
@@ -244,7 +255,7 @@ public final class ContainerCacheFastPinTestSupport {
     }
 
     private static CacheEntry stableEntry(Cacheable item) {
-        CacheEntry entry = new CacheEntry();
+        CacheEntry entry = new CacheEntry(CacheEntry.kind("ContainerCache", true));
         entry.lock();
         try {
             entry.settingIdentityComplete();

@@ -462,7 +462,8 @@ public class BaseDataFileFactory
 
         containerCache = 
             cf.newCacheManager(
-                this, "ContainerCache", fileCacheSize / 2, fileCacheSize);
+                this, "ContainerCache", fileCacheSize / 2, fileCacheSize,
+                true);
 
         // Register MBeans that allow users to monitor the page cache
         // and the container cache.

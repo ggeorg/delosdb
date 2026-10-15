@@ -39,5 +39,26 @@ public interface CacheFactory {
 	
 	public CacheManager newCacheManager(CacheableFactory holderFactory, String name,
 										int initialSize, int maximumSize);
+
+	/**
+		Create a cache whose entries, once their identity is set, may be kept
+		and released without taking the entry's mutex. Suits a small cache of
+		long-lived objects that many threads keep at once, such as the
+		container cache. A factory without such a path creates an ordinary
+		cache.
+
+		@param holderFactory The factory for the objects that are to be cached.
+		@param name			The name of the cache
+		@param initialSize	The initial capacity of the cache
+		@param maximumSize  The maximum number of objects the cache will hold
+		@param lockFreeKeeps Whether entries may be kept without the mutex
+        @return a cache manager
+	*/
+	default CacheManager newCacheManager(CacheableFactory holderFactory,
+										 String name, int initialSize,
+										 int maximumSize, boolean lockFreeKeeps)
+	{
+		return newCacheManager(holderFactory, name, initialSize, maximumSize);
+	}
 }
 

@@ -26,15 +26,13 @@ import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 import org.apache.derby.iapi.services.cache.Cacheable;
-import org.apache.derby.iapi.store.raw.ContainerKey;
-import org.apache.derby.iapi.store.raw.PageKey;
 import org.apache.derby.shared.common.sanity.SanityManager;
 
 /**
  * Class representing an entry in the cache. It is used by
  * <code>ConcurrentCache</code>. When a thread invokes any of the methods in
- * this class, except <code>lock()</code> and the explicitly named stable
- * container fast-pin methods, it must first have called <code>lock()</code> to
+ * this class, except <code>lock()</code> and the explicitly named lock-free
+ * keep methods, it must first have called <code>lock()</code> to
  * ensure exclusive access to the entry.
  *
  * <p>
@@ -96,6 +94,40 @@ final class CacheEntry {
     private static final CacheEntryStats CONGLOMERATE_CACHE_STATS = new CacheEntryStats();
     private static final CacheEntryStats OTHER_CACHE_STATS = new CacheEntryStats();
 
+    /**
+     * What the entries of one cache share: whether they may be kept and
+     * released without the entry mutex, and their diagnostics.
+     */
+    static final class Kind {
+        final boolean lockFreeKeeps;
+        final CacheEntryStats stats;
+
+        private Kind(boolean lockFreeKeeps, CacheEntryStats stats) {
+            this.lockFreeKeeps = lockFreeKeeps;
+            this.stats = stats;
+        }
+    }
+
+    /**
+     * The kind of the entries of the named cache.
+     *
+     * @param lockFreeKeeps whether entries with a stable identity may be kept
+     *        and released without the entry mutex
+     */
+    static Kind kind(String cacheName, boolean lockFreeKeeps) {
+        CacheEntryStats stats;
+        if ("PageCache".equals(cacheName)) {
+            stats = PAGE_CACHE_STATS;
+        } else if ("ContainerCache".equals(cacheName)) {
+            stats = CONTAINER_CACHE_STATS;
+        } else if ("ConglomerateDirectoryCache".equals(cacheName)) {
+            stats = CONGLOMERATE_CACHE_STATS;
+        } else {
+            stats = OTHER_CACHE_STATS;
+        }
+        return new Kind(lockFreeKeeps, stats);
+    }
+
     private static final class CacheEntryStats {
         final LongAdder acquisitions = new LongAdder();
         final LongAdder contended = new LongAdder();
@@ -110,6 +142,13 @@ final class CacheEntry {
 
     /** Mutex which guards the internal state of the entry. */
     private final ReentrantLock mutex = new ReentrantLock();
+
+    /** What this entry shares with the other entries of its cache. */
+    private final Kind kind;
+
+    CacheEntry(Kind kind) {
+        this.kind = kind;
+    }
 
     /**
      * The cached object. If it is null, it means that the entry is invalid
@@ -126,8 +165,8 @@ final class CacheEntry {
             FAST_CONTAINER_PIN_STRIPES * FAST_CONTAINER_PIN_STRIDE;
 
     /**
-     * Additional keep references acquired through the stable ContainerKey
-     * fast path. This array is allocated only for ContainerKey entries. The
+     * Additional keep references acquired through the lock-free keep path.
+     * This array is allocated only for entries of a cache that allows it. The
      * sparse indexes keep independent reader stripes on separate cache lines,
      * avoiding one globally contended atomic keep counter. Ordinary cache
      * entries retain Derby's original int counter and allocate no stripes.
@@ -135,7 +174,8 @@ final class CacheEntry {
     private volatile AtomicIntegerArray fastContainerKeepStripes;
 
     /**
-     * Stable ContainerKey entries may use the lock-free keep/release path.
+     * Entries with a stable identity, in a cache that allows it, may use the
+     * lock-free keep/release path.
      * Lifecycle operations freeze that path before removing or reusing the
      * cached object.
      */
@@ -203,27 +243,12 @@ final class CacheEntry {
     }
 
     private void recordDiagnostic(boolean contended, long waitNanos) {
-        CacheEntryStats stats = diagnosticStats();
+        CacheEntryStats stats = kind.stats;
         stats.acquisitions.increment();
         if (contended) {
             stats.contended.increment();
             stats.waitNanos.add(waitNanos);
         }
-    }
-
-    private CacheEntryStats diagnosticStats() {
-        Cacheable item = cacheable;
-        Object identity = item == null ? null : item.getIdentity();
-        if (identity instanceof PageKey) {
-            return PAGE_CACHE_STATS;
-        }
-        if (identity instanceof ContainerKey) {
-            return CONTAINER_CACHE_STATS;
-        }
-        if (identity instanceof Long) {
-            return CONGLOMERATE_CACHE_STATS;
-        }
-        return OTHER_CACHE_STATS;
     }
 
     private static String diagnosticRow(String cacheName, CacheEntryStats stats) {
@@ -232,13 +257,13 @@ final class CacheEntry {
     }
 
     /**
-     * Try to pin an initialized ContainerKey entry without taking the entry
+     * Try to pin an initialized entry of a lock-free cache without taking the entry
      * mutex. A concurrent lifecycle operation freezes this path before it can
      * remove or reuse the cached object. The second state check closes the
      * race between the initial fast-path check and the atomic pin.
      */
     Cacheable tryFastContainerKeep(Object key) {
-        if (!(key instanceof ContainerKey)) {
+        if (!kind.lockFreeKeeps) {
             return null;
         }
         if (HOT_STATE_DIAGNOSTICS) {
@@ -280,10 +305,9 @@ final class CacheEntry {
         return item;
     }
 
-    /** Release a ContainerKey entry without taking the entry mutex. */
+    /** Release an entry of a lock-free cache without taking the entry mutex. */
     boolean tryFastContainerUnkeep(Cacheable item) {
-        Object identity = item.getIdentity();
-        if (!(identity instanceof ContainerKey)) {
+        if (!kind.lockFreeKeeps) {
             return false;
         }
         if (HOT_STATE_DIAGNOSTICS) {
@@ -590,7 +614,7 @@ final class CacheEntry {
         cacheable = c;
         fastContainerAccess = c != null
                 && settingIdentity == null
-                && c.getIdentity() instanceof ContainerKey;
+                && kind.lockFreeKeeps;
         if (fastContainerAccess) {
             AtomicIntegerArray stripes = fastContainerKeepStripes;
             if (stripes == null) {

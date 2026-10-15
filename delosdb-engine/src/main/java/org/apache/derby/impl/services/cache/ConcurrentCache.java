@@ -62,6 +62,8 @@ final class ConcurrentCache implements CacheManager {
     private final CacheableFactory holderFactory;
     /** Name of this cache. */
     private final String name;
+    /** What the entries of this cache share. */
+    private final CacheEntry.Kind entryKind;
     /** The maximum size (number of elements) for this cache. */
     private final int maxSize;
     /** Replacement policy to be used for this cache. */
@@ -102,13 +104,16 @@ final class ConcurrentCache implements CacheManager {
      * @param name the name of the cache
      * @param initialSize the initial capacity of the cache
      * @param maxSize maximum number of elements in the cache
+     * @param lockFreeKeeps whether entries may be kept and released without
+     *        the entry mutex while their identity is stable
      */
     ConcurrentCache(CacheableFactory holderFactory, String name,
-                    int initialSize, int maxSize) {
+                    int initialSize, int maxSize, boolean lockFreeKeeps) {
         cache = new ConcurrentHashMap<Object, CacheEntry>(initialSize);
         replacementPolicy = new ClockPolicy(this, initialSize, maxSize);
         this.holderFactory = holderFactory;
         this.name = name;
+        this.entryKind = CacheEntry.kind(name, lockFreeKeeps);
         this.maxSize = maxSize;
     }
 
@@ -119,6 +124,11 @@ final class ConcurrentCache implements CacheManager {
      */
     ReplacementPolicy getReplacementPolicy() {
         return replacementPolicy;
+    }
+
+    /** Whether entries of this cache may be kept without the entry mutex. */
+    boolean lockFreeKeepsForTesting() {
+        return entryKind.lockFreeKeeps;
     }
 
     /**
@@ -150,7 +160,7 @@ final class ConcurrentCache implements CacheManager {
                     entry = cache.get(key);
                 }
             } else {
-                CacheEntry freshEntry = new CacheEntry();
+                CacheEntry freshEntry = new CacheEntry(entryKind);
                 // Lock the entry before it's inserted to avoid window for
                 // others to remove it.
                 freshEntry.lock();
@@ -405,7 +415,7 @@ final class ConcurrentCache implements CacheManager {
             return null;
         }
 
-        CacheEntry entry = new CacheEntry();
+        CacheEntry entry = new CacheEntry(entryKind);
         entry.lock();
 
         if (cache.putIfAbsent(key, entry) != null) {

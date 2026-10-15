@@ -42,7 +42,16 @@ public class ConcurrentCacheFactory implements CacheFactory {
     public CacheManager newCacheManager(CacheableFactory holderFactory,
                                         String name,
                                         int initialSize, int maximumSize) {
+        return newCacheManager(
+                holderFactory, name, initialSize, maximumSize, false);
+    }
+
+    @Override
+    public CacheManager newCacheManager(CacheableFactory holderFactory,
+                                        String name,
+                                        int initialSize, int maximumSize,
+                                        boolean lockFreeKeeps) {
         return new ConcurrentCache(holderFactory, name,
-                                   initialSize, maximumSize);
+                                   initialSize, maximumSize, lockFreeKeeps);
     }
 }

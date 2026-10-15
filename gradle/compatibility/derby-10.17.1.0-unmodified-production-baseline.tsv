@@ -531,9 +531,7 @@ bdd715e683148e1bf77e1f75bafc192f0403e10bfb2eabe17e5dc7eb0438a660	delosdb-engine/
 588c5c09d7e3fb6c15cde39a7fadc90930dd4e3ab86b1d6fffc5fc4b1933fda8	delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportResultSetMetaData.java
 62c3767bc9f3aca45f258727d8383a81d565d5ec2928455eae6bdf3477ac7eed	delosdb-engine/src/main/java/org/apache/derby/impl/load/LoadError.java
 c63cbdc48d58a45e3c7a50c57c26bb8575a9298042235f134da061cdf96ec95a	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/BackgroundCleaner.java
-245375ea61be33fe09ac11b6c7aa9db3a96116de0d64963ba8808caee3be1541	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/CacheEntry.java
 80413676316f04be6bc03b3247973142bada6393e30f26695c887b112ab1f57f	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ClockPolicy.java
-eb67a09931b9523f44349fff41dc2d51ca997563db6a20bd6eb8fa268f06c9cc	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCacheFactory.java
 c7010bb849cd61bbb4b3dab5e3c0026b33da7a4b83b2a1278850b22b3d0521ea	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCacheMBeanImpl.java
 1527024773160be51702628ffc93a04fe3c080c709be48dde659699bf6082eb6	delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ReplacementPolicy.java
 cd8f74575745c1cba81901627ec006147aeec225423b02b9490e9494826f74c0	delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/ServiceRecord.java
@@ -992,7 +990,6 @@ f80966489f9dbe1a1ce30ea5acc22de9f1a6ee834671ff441cd5b39c4fefda1b	delosdb-osgi-st
 ab1a7cf5ee71252a9722e30b43a6e4ae19f02e5415c6cd0bde6a196e97822fd3	delosdb-osgi-stub/src/main/java/org/osgi/framework/Version.java
 309538df001bb1eb993b1ca2c523048c9823e0fc9ce7ffb3ff7da0087629bbd0	delosdb-runner/src/main/java/org/apache/derby/run/info/DerbyModule.java
 1b2822d8e8190efcb03e71b3d22723ab5bce50ff8d56749895e3fd1efc51e485	delosdb-runner/src/main/java/org/apache/derby/run/run.java
-a5fbec80f82b5245d391cb3cf54be0266b6f1cbb712dc25306b602e6f056caf5	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/CacheFactory.java
 af6c3201a85a2c9d351e8051bbf594d1048167ddf950d92e45f6104bc66b5219	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/Cacheable.java
 4183fd8295bbce4732ecb352bbb2555f95a9d17b93945f8cb7f1e4e5efe67cdf	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/CacheableFactory.java
 50aea3a46dd2e935086cd099ffb982a4542e38a79cad008d0a1df71061bdc143	delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/SizedCacheable.java
