@@ -70,6 +70,42 @@ final class MvccRawStoreVacuum {
                 directories.size() - plan.removedDirectories().size());
     }
 
+    /**
+     * The rows, of those given, that no longer change for any snapshot: their
+     * newest version committed at or before the horizon, or vacuum removed
+     * them. A secondary-index entry marked deleted for such a row is needed
+     * by no snapshot: the change that marked it committed by the horizon,
+     * and an index entry is marked deleted only for a key the newest version
+     * does not hold, because inserting the same key and row again unmarks it.
+     */
+    static Set<Long> settledRows(
+            Transaction transaction,
+            MvccRawStoreTable.Descriptor table,
+            Set<Long> rowIds,
+            long oldestVisibleThrough) throws StandardException {
+        Map<Long, DirectoryEntry> directories = new HashMap<>();
+        for (DirectoryEntry directory : readDirectories(transaction, table)) {
+            if (rowIds.contains(directory.rowId())) {
+                directories.put(directory.rowId(), directory);
+            }
+        }
+        Map<Long, VersionEntry> versionsById = indexVersions(readVersions(transaction, table));
+        Set<Long> settled = new HashSet<>();
+        for (long rowId : rowIds) {
+            DirectoryEntry directory = directories.get(rowId);
+            VersionEntry head = directory == null
+                    ? null
+                    : versionsById.get(directory.headVersionId());
+            if (directory == null
+                    || (head != null
+                        && head.beginSequence() != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                        && head.beginSequence() <= oldestVisibleThrough)) {
+                settled.add(rowId);
+            }
+        }
+        return settled;
+    }
+
     private static VacuumPlan plan(
             List<DirectoryEntry> directories,
             List<VersionEntry> versions,

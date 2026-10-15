@@ -1,6 +1,6 @@
 # MVCC secondary-index visibility
 
-Status: design accepted 2026-10-14. Stage 1 implemented 2026-10-14; stage 2 is next.
+Status: design accepted 2026-10-14. Stages 1 and 2 implemented 2026-10-14; stage 3 is next.
 
 ## Problem
 
@@ -96,10 +96,31 @@ table) is read as before stage 1.
 
 ### Stage 2: retain deleted entries until the vacuum horizon
 
-- Post-commit reclaim (`BTreePostCommit`) and purge on page split must not physically remove a
-  deleted-marked entry of an MVCC-table index while a snapshot older than the delete is still
-  active (`MvccRawStoreRuntime.vacuumHorizon`).
-- MVCC vacuum removes the entry when it reclaims the last version the entry points to.
+- Post-commit reclaim (`BTreePostCommit`) and purge on page split already skip MVCC-table indexes:
+  both ask the base controller for `supportsLockBasedCommittedDeleteReclamation`, which MVCC
+  declines because Derby row locks do not decide its visibility. Before stage 2, deleted entries of
+  these indexes were therefore never removed.
+- `B2I.purgeConglomerate`, which in-place compress (`SYSCS_INPLACE_COMPRESS_TABLE` with purge) calls
+  for every index after the base table, now purges the entries the base says no snapshot can need,
+  through `AccessMethodDeletedIndexEntries` (derby-store-api). It opens the base only when
+  `Conglomerate.keepsDeletedIndexEntries()` says so: a lock on a heap base, held by the compress
+  transaction, would block the nested transaction that defragments it next. `BTreeDeletedEntryReclaimer` copies
+  the row locations of every deleted entry, the base judges them in one pass, and each leaf that has
+  not changed since is purged in its own internal transaction, which holds the latch until it
+  commits, as post-commit purging does.
+- An entry is needed by no snapshot when the newest version of its row committed at or before the
+  vacuum horizon, or vacuum removed the row (`MvccRawStoreVacuum.settledRows`). The change that
+  marked the entry committed by then, and the newest version cannot hold the entry's key: inserting
+  the same key and row again unmarks the entry instead of adding one. No column mapping is needed.
+- DML marks index entries before it changes the base row, so a writer can have marked entries
+  whose rows still look settled. Reclamation therefore runs only while no other transaction writes
+  the table, using the per-table write state from stage 1, and stops if a writer begins or ends
+  before a leaf is purged.
+
+Limits: the background maintenance service vacuums base tables but does not purge their indexes,
+because only the data dictionary lists a table's indexes and the service runs without a connection;
+in-place compress does both. Gen2-A1 tables, whose maintenance does not reclaim versions by horizon,
+keep their deleted entries.
 
 ### Stage 3: unique indexes keep both entries
 
@@ -112,6 +133,8 @@ table) is read as before stage 1.
 
 ## Evidence for each stage
 
+- `MvccSecondaryIndexReclamationTest` for stage 2: purge after commit and across a restart, retention
+  for an older snapshot, entries of moved keys, and no purge while another transaction writes.
 - Isolation specifications for the reproduced cases: index-only count and max after a commit
   behind the snapshot, delete behind the snapshot through an index, re-insert of a deleted unique
   key, and an empty first read. Stage 1 adds DEL-ISO-005 (inserts and deletes behind the

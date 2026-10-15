@@ -17,6 +17,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/StoreCo
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBaseFetchPagePrefetch.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodBootContext.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodConglomerateProperties.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodDeletedIndexEntries.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodIndexBuildLifecycle.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodSnapshotIndexEntries.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/AccessMethodTransactionLifecycle.java
@@ -217,6 +218,7 @@ delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexOpenRequest.ja
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexProvider.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/RowReference.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/package-info.java
+delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeDeletedEntryReclaimer.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/index/IndexDefinitions.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/D_DiagnosticFormatting.java
 delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/heap/DerbyHeapContainerFiles.java

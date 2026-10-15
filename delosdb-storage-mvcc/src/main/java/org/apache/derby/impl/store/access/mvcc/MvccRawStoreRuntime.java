@@ -1021,9 +1021,10 @@ final class MvccRawStoreRuntime {
      * Writer activity on one table. A snapshot read of a secondary index
      * checks each entry against the base row unless no transaction has
      * written the table since the snapshot: then an entry is visible exactly
-     * when it is not marked deleted. Transactions register before they open
-     * the table or its indexes for update, and end after their commit is
-     * published or their rollback is complete.
+     * when it is not marked deleted. Purging deleted index entries requires
+     * that no other transaction writes the table. Transactions register
+     * before they open the table or its indexes for update, and end after
+     * their commit is published or their rollback is complete.
      */
     static final class TableWriteState {
         /** Epoch value meaning the table changed after the snapshot. */
@@ -1057,9 +1058,18 @@ final class MvccRawStoreRuntime {
          * {@link #CHANGED}.
          */
         long unchangedEpoch(long snapshotSequence) {
+            return quietEpoch(0, snapshotSequence);
+        }
+
+        /**
+         * The current epoch if {@code ownWriters} transactions, the caller's
+         * own, are all that write the table and no write committed after
+         * {@code committedThrough}, else {@link #CHANGED}.
+         */
+        long quietEpoch(int ownWriters, long committedThrough) {
             long before = epoch.get();
-            if (activeWriters.get() != 0
-                    || lastCommitSequence.get() > snapshotSequence
+            if (activeWriters.get() != ownWriters
+                    || lastCommitSequence.get() > committedThrough
                     || epoch.get() != before) {
                 return CHANGED;
             }

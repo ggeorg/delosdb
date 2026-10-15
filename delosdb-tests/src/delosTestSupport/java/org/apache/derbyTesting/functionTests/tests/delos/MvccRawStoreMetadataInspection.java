@@ -1304,6 +1304,58 @@ final class MvccRawStoreMetadataInspection {
         }
     }
 
+    /** Number of deleted-marked entries in the pages of an index, by its exact name, in schema APP. */
+    static int deletedIndexEntryCount(Connection connection, String indexName) throws Exception {
+        long conglomerateId = indexConglomerateId(connection, indexName);
+        TransactionManager manager = transactionManager(connection);
+        Transaction raw = manager.getRawStoreXact();
+        ContainerHandle container = raw.openContainer(
+                new ContainerKey(0, manager.findContainerid(conglomerateId)),
+                (LockingPolicy) null,
+                ContainerHandle.MODE_READONLY);
+        int deleted = 0;
+        Page page = container.getFirstPage();
+        try {
+            while (page != null) {
+                for (int slot = 1; slot < page.recordCount(); slot++) {
+                    if (page.isDeletedAtSlot(slot)) {
+                        deleted++;
+                    }
+                }
+                long pageNumber = page.getPageNumber();
+                page.unlatch();
+                page = container.getNextPage(pageNumber);
+            }
+        } finally {
+            if (page != null) {
+                page.unlatch();
+            }
+            container.close();
+        }
+        return deleted;
+    }
+
+    /** Purges one index, by its exact name, of schema APP, as in-place compress does per conglomerate. */
+    static void purgeIndexConglomerate(Connection connection, String indexName) throws Exception {
+        transactionManager(connection).purgeConglomerate(
+                indexConglomerateId(connection, indexName));
+    }
+
+    private static long indexConglomerateId(Connection connection, String indexName)
+            throws Exception {
+        String sql = "select c.conglomeratenumber "
+                + "from sys.sysconglomerates c, sys.sysschemas s "
+                + "where c.schemaid = s.schemaid and c.isindex = true "
+                + "and s.schemaname = 'APP' and c.conglomeratename = '" + indexName + "'";
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(sql)) {
+            if (!resultSet.next()) {
+                throw new AssertionError("No index conglomerate for " + indexName);
+            }
+            return resultSet.getLong(1);
+        }
+    }
+
     private static long baseConglomerateId(Connection connection, String tableName) throws Exception {
         String sql = "select c.conglomeratenumber "
                 + "from sys.sysconglomerates c, sys.systables t, sys.sysschemas s "

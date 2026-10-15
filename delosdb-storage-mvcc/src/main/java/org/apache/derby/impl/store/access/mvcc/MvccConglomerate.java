@@ -154,6 +154,11 @@ public final class MvccConglomerate
     }
 
     @Override
+    public boolean keepsDeletedIndexEntries() {
+        return true;
+    }
+
+    @Override
     public void conglomerateIdAssigned(
             TransactionManager xactManager,
             long conglomId) throws StandardException {

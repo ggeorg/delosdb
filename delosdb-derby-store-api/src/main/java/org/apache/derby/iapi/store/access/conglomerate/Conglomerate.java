@@ -231,6 +231,16 @@ public interface Conglomerate extends Storable, StoreDataValue
     boolean isTemporary();
 
     /**
+     * Whether snapshots of this base table can still need secondary-index
+     * entries that a committed change marked deleted. Its indexes then keep
+     * those entries until its controllers, as
+     * {@link AccessMethodDeletedIndexEntries}, say no snapshot needs them.
+     */
+    default boolean keepsDeletedIndexEntries() {
+        return false;
+    }
+
+    /**
      * Observe the access-layer identifier assigned after a conglomerate
      * factory has returned and the access manager can resolve the new base.
      *

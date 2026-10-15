@@ -10,12 +10,15 @@
  */
 package org.apache.derby.impl.store.access.mvcc;
 
+import java.util.HashSet;
 import java.util.Properties;
+import java.util.Set;
 
 import org.apache.derby.iapi.services.io.FormatableBitSet;
 import org.apache.derby.iapi.store.access.ConglomerateController;
 import org.apache.derby.iapi.store.access.SpaceInfo;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodBaseFetchPagePrefetch;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodDeletedIndexEntries;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodIndexBuildLifecycle;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodReadCommittedUpdateRecheck;
 import org.apache.derby.iapi.store.access.conglomerate.AccessMethodSnapshotIndexEntries;
@@ -33,8 +36,9 @@ import org.apache.derby.shared.common.error.StandardException;
 /** Controller for the isolated RawStore-backed MVCC table format. */
 final class MvccRawStoreConglomerateController
         implements ConglomerateController, AccessMethodBaseFetchPagePrefetch,
-                AccessMethodIndexBuildLifecycle, AccessMethodReadCommittedUpdateRecheck,
-                AccessMethodSnapshotIndexEntries, AccessMethodUniqueConstraintLifecycle {
+                AccessMethodDeletedIndexEntries, AccessMethodIndexBuildLifecycle,
+                AccessMethodReadCommittedUpdateRecheck, AccessMethodSnapshotIndexEntries,
+                AccessMethodUniqueConstraintLifecycle {
     private final MvccRawStoreRuntime runtime;
     private final MvccRawStoreTable.Descriptor table;
     private final TransactionManager transactionManager;
@@ -60,7 +64,7 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
     private boolean readCommittedUpdateRecheck;
-    private MvccRawStoreRuntime.TableWriteState snapshotIndexTableWrites;
+    private MvccRawStoreRuntime.TableWriteState tableWrites;
     private long snapshotIndexUnchangedEpoch = MvccRawStoreRuntime.TableWriteState.CHANGED;
     private boolean closed;
 
@@ -291,13 +295,52 @@ final class MvccRawStoreConglomerateController
         long snapshotSequence = statementSnapshotLease != null
                 ? statementSnapshotSequence
                 : runtime.context(transactionManager, rawTransaction).snapshotSequence();
-        snapshotIndexTableWrites = runtime.tableWriteState(table);
-        snapshotIndexUnchangedEpoch = snapshotIndexTableWrites.unchangedEpoch(snapshotSequence);
+        tableWrites = runtime.tableWriteState(table);
+        snapshotIndexUnchangedEpoch = tableWrites.unchangedEpoch(snapshotSequence);
     }
 
     @Override
     public boolean deletedMarkDecides() {
-        return snapshotIndexTableWrites.unchangedSince(snapshotIndexUnchangedEpoch);
+        return tableWrites.unchangedSince(snapshotIndexUnchangedEpoch);
+    }
+
+    @Override
+    public long beginDeletedEntryReclamation() throws StandardException {
+        ensureOpen();
+        // Gen2-A1 maintenance does not reclaim versions by horizon.
+        if (table.gen2A1()) {
+            return NO_RECLAMATION;
+        }
+        MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
+        tableWrites = runtime.tableWriteState(table);
+        long epoch = tableWrites.quietEpoch(context.writesTable(table) ? 1 : 0, Long.MAX_VALUE);
+        return epoch == MvccRawStoreRuntime.TableWriteState.CHANGED ? NO_RECLAMATION : epoch;
+    }
+
+    @Override
+    public boolean[] reclaimableRows(StoreRowLocation[] rowLocations, int count)
+            throws StandardException {
+        ensureOpen();
+        Set<Long> rowIds = new HashSet<>();
+        for (int index = 0; index < count; index++) {
+            rowIds.add(MvccRowLocation.from(rowLocations[index]).rowId());
+        }
+        Set<Long> settled;
+        try (MvccRawStoreRuntime.TableReadBoundary ignored = runtime.enterTableRead(table)) {
+            settled = MvccRawStoreVacuum.settledRows(
+                    rawTransaction, table, rowIds, runtime.vacuumHorizon());
+        }
+        boolean[] reclaimable = new boolean[count];
+        for (int index = 0; index < count; index++) {
+            reclaimable[index] = settled.contains(
+                    MvccRowLocation.from(rowLocations[index]).rowId());
+        }
+        return reclaimable;
+    }
+
+    @Override
+    public boolean unchangedSince(long token) {
+        return tableWrites.unchangedSince(token);
     }
 
     @Override

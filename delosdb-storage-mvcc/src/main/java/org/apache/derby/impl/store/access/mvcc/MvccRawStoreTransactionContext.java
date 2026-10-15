@@ -140,6 +140,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         });
     }
 
+    /** Whether this transaction is registered as a writer of the table. */
+    boolean writesTable(MvccRawStoreTable.Descriptor table) {
+        return writtenTables.containsKey(table.metadataContainer());
+    }
+
     void beforeTableWrite(MvccRawStoreTable.Descriptor table) throws StandardException {
         beforeWrite();
         acquireShared(MvccRawStoreLogicalLock.table(table));

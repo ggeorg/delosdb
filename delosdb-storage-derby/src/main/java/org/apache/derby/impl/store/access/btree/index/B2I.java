@@ -32,6 +32,7 @@ import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.error.StandardException;
 
 import org.apache.derby.impl.store.access.conglomerate.ConglomerateUtil;
+import org.apache.derby.iapi.store.access.conglomerate.AccessMethodDeletedIndexEntries;
 import org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
 import org.apache.derby.iapi.store.access.conglomerate.LogicalUndo;
 import org.apache.derby.iapi.store.access.conglomerate.ScanManager;
@@ -48,6 +49,7 @@ import org.apache.derby.iapi.store.access.TransactionController;
 
 
 import org.apache.derby.iapi.store.raw.ContainerHandle;
+import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Transaction;
 
@@ -56,6 +58,7 @@ import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreStringDataValue;
 
 import org.apache.derby.impl.store.access.btree.BTree;
+import org.apache.derby.impl.store.access.btree.BTreeDeletedEntryReclaimer;
 import org.apache.derby.impl.store.access.btree.BTreeLockingPolicy;
 import org.apache.derby.impl.store.access.btree.LeafControlRow;
 import org.apache.derby.impl.store.access.btree.OpenBTree;
@@ -932,9 +935,32 @@ public class B2I extends BTree
     Transaction                     rawtran)
         throws StandardException
     {
-        // currently on work to do in btree's for purge rows, purging
-        // happens best when split is about to happen.
-        return;
+        // Committed deletes are otherwise purged after commit and when a
+        // split is about to happen. A base table whose snapshots can still
+        // need them keeps them until it says no snapshot does; purge those.
+        // Other bases are not opened, so their locks are left alone.
+        Conglomerate base_conglomerate =
+            xact_manager.findExistingConglomerateFromKey(
+                new ContainerKey(
+                    id.getSegmentId(),
+                    xact_manager.findContainerid(baseConglomerateId)));
+        if (!base_conglomerate.keepsDeletedIndexEntries())
+        {
+            return;
+        }
+        ConglomerateController base_cc =
+            lockTable(
+                xact_manager, 0, TransactionController.MODE_RECORD,
+                TransactionController.ISOLATION_REPEATABLE_READ);
+        try
+        {
+            BTreeDeletedEntryReclaimer.reclaim(
+                xact_manager, this, (AccessMethodDeletedIndexEntries) base_cc);
+        }
+        finally
+        {
+            base_cc.close();
+        }
     }
 
 	public void compressConglomerate(
