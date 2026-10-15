@@ -144,6 +144,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/cache/ConcurrentCach
 delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/BasicDaemon.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/jmx/JMXManagementService.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/AbstractPool.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/ConcurrentLockSet.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Deadlock.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java

@@ -137,6 +137,7 @@ module org.apache.derby.engine
     uses org.apache.derby.iapi.store.types.StoreRowLocationFactory;
     uses org.apache.derby.iapi.store.types.StoreTypeSupport;
     uses org.apache.derby.iapi.services.locks.LockReportSupport;
+    uses org.apache.derby.iapi.services.locks.LockFastPathSupport;
     uses org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
 
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
@@ -147,6 +148,9 @@ module org.apache.derby.engine
 
     provides org.apache.derby.iapi.services.locks.LockReportSupport
         with org.apache.derby.impl.sql.conn.EngineLockReportSupport;
+
+    provides org.apache.derby.iapi.services.locks.LockFastPathSupport
+        with org.apache.derby.iapi.store.raw.StoreLockFastPathSupport;
 
     provides org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport
         with org.apache.derby.impl.sql.catalog.EngineIndexDefinitionSupport;

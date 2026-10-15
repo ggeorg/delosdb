@@ -42,7 +42,6 @@ import java.util.Map;
 import java.util.Enumeration;
 import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.locks.LockOwner;
-import org.apache.derby.iapi.store.raw.ContainerLock;
 
 /**
  * An abstract implementation of LockFactory that allows different
@@ -130,7 +129,7 @@ abstract class AbstractPool implements LockFactory
 			}
 		}
 
-		if (HELD_INTENT_REGRANT_ENABLED && qualifier == ContainerLock.CIX
+		if (HELD_INTENT_REGRANT_ENABLED && qualifier == LockFastPaths.CONTAINER_INTENT_EXCLUSIVE
 				&& ((LockSpace) compatibilitySpace).regrantHeld(group, ref, qualifier)) {
 			HELD_INTENT_REGRANTS.increment();
 			return true;

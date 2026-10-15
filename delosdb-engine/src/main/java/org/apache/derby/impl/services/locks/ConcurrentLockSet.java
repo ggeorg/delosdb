@@ -25,9 +25,6 @@ import org.apache.derby.iapi.services.locks.CompatibilitySpace;
 import org.apache.derby.iapi.services.locks.Latch;
 import org.apache.derby.iapi.services.locks.Lockable;
 import org.apache.derby.iapi.services.locks.C_LockFactory;
-import org.apache.derby.iapi.store.raw.ContainerKey;
-import org.apache.derby.iapi.store.raw.ContainerLock;
-import org.apache.derby.iapi.store.raw.RowLock;
 
 import org.apache.derby.shared.common.error.StandardException;
 
@@ -344,7 +341,7 @@ final class ConcurrentLockSet implements LockTable {
                     }
                     return new AtomicInteger();
                 }).incrementAndGet();
-                Lock lock = new Lock(space, ref, ContainerLock.CIS);
+                Lock lock = new Lock(space, ref, LockFastPaths.CONTAINER_INTENT_SHARED);
                 lock.count = count;
                 return lock;
             } finally {
@@ -423,7 +420,7 @@ final class ConcurrentLockSet implements LockTable {
 
         public Lock getLock(CompatibilitySpace compatibilitySpace,
                             Object qualifier) {
-            if (qualifier != ContainerLock.CIS) {
+            if (qualifier != LockFastPaths.CONTAINER_INTENT_SHARED) {
                 return null;
             }
             AtomicInteger held = holders.get(compatibilitySpace);
@@ -467,7 +464,7 @@ final class ConcurrentLockSet implements LockTable {
             for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
                 int count = holder.getValue().get();
                 if (count > 0) {
-                    Lock lock = new Lock(holder.getKey(), ref, ContainerLock.CIS);
+                    Lock lock = new Lock(holder.getKey(), ref, LockFastPaths.CONTAINER_INTENT_SHARED);
                     lock.count = count;
                     grants.add(lock);
                 }
@@ -486,7 +483,7 @@ final class ConcurrentLockSet implements LockTable {
                 if (holder.getValue().get() == 0 || holder.getKey() == compatibilitySpace) {
                     continue;
                 }
-                if (!ref.requestCompatible(qualifier, ContainerLock.CIS)) {
+                if (!ref.requestCompatible(qualifier, LockFastPaths.CONTAINER_INTENT_SHARED)) {
                     return false;
                 }
             }
@@ -570,7 +567,7 @@ final class ConcurrentLockSet implements LockTable {
                 if (HOT_STATE_DIAGNOSTICS) {
                     FAST_RECORD_READ_ACQUIRE_HITS.increment();
                 }
-                Lock lock = new Lock(space, ref, RowLock.RS2);
+                Lock lock = new Lock(space, ref, LockFastPaths.ROW_SHARED);
                 lock.count = 1;
                 return lock;
             } finally {
@@ -735,7 +732,7 @@ final class ConcurrentLockSet implements LockTable {
 
         public Lock getLock(CompatibilitySpace compatibilitySpace,
                             Object qualifier) {
-            if (qualifier != RowLock.RS2) {
+            if (qualifier != LockFastPaths.ROW_SHARED) {
                 return null;
             }
             AtomicInteger held = holders.get(compatibilitySpace);
@@ -778,7 +775,7 @@ final class ConcurrentLockSet implements LockTable {
             for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
                 int count = holder.getValue().get();
                 if (count > 0) {
-                    Lock lock = new Lock(holder.getKey(), ref, RowLock.RS2);
+                    Lock lock = new Lock(holder.getKey(), ref, LockFastPaths.ROW_SHARED);
                     lock.count = count;
                     grants.add(lock);
                 }
@@ -798,7 +795,7 @@ final class ConcurrentLockSet implements LockTable {
             if (totalHolds.get() <= ownCount) {
                 return true;
             }
-            return ref.requestCompatible(qualifier, RowLock.RS2);
+            return ref.requestCompatible(qualifier, LockFastPaths.ROW_SHARED);
         }
     }
 
@@ -828,13 +825,13 @@ final class ConcurrentLockSet implements LockTable {
                 continue;
             }
             if (control == null) {
-                Lock first = new Lock(holder.getKey(), ref, ContainerLock.CIS);
+                Lock first = new Lock(holder.getKey(), ref, LockFastPaths.CONTAINER_INTENT_SHARED);
                 first.count = count;
                 control = new LockControl(first, ref);
                 continue;
             }
             for (int i = 0; i < count; i++) {
-                Lock granted = control.addLock(this, holder.getKey(), ContainerLock.CIS);
+                Lock granted = control.addLock(this, holder.getKey(), LockFastPaths.CONTAINER_INTENT_SHARED);
                 if (SanityManager.DEBUG) {
                     SanityManager.ASSERT(granted.getCount() != 0,
                             "materialized CIS lock was not granted");
@@ -855,13 +852,13 @@ final class ConcurrentLockSet implements LockTable {
                 continue;
             }
             if (control == null) {
-                Lock first = new Lock(holder.getKey(), ref, RowLock.RS2);
+                Lock first = new Lock(holder.getKey(), ref, LockFastPaths.ROW_SHARED);
                 first.count = count;
                 control = new LockControl(first, ref);
                 continue;
             }
             for (int i = 0; i < count; i++) {
-                Lock granted = control.addLock(this, holder.getKey(), RowLock.RS2);
+                Lock granted = control.addLock(this, holder.getKey(), LockFastPaths.ROW_SHARED);
                 if (SanityManager.DEBUG) {
                     SanityManager.ASSERT(granted.getCount() != 0,
                             "materialized RecordId RS2 lock was not granted");
@@ -882,7 +879,7 @@ final class ConcurrentLockSet implements LockTable {
 
     private static boolean isFastRecordReadRequest(Lockable ref, Object qualifier) {
         return FAST_RECORD_READ_ENABLED
-                && qualifier == RowLock.RS2
+                && qualifier == LockFastPaths.ROW_SHARED
                 && "org.apache.derby.impl.store.raw.data.RecordId".equals(
                         ref.getClass().getName());
     }
@@ -912,7 +909,7 @@ final class ConcurrentLockSet implements LockTable {
             return null;
         }
         Lock first = (Lock) control;
-        if (first.getQualifier() != RowLock.RS2 || first.getCount() != 1
+        if (first.getQualifier() != LockFastPaths.ROW_SHARED || first.getCount() != 1
                 || first.getCompatabilitySpace() == compatibilitySpace) {
             return null;
         }
@@ -949,7 +946,8 @@ final class ConcurrentLockSet implements LockTable {
     }
 
     private static boolean isFastCisRequest(Lockable ref, Object qualifier) {
-        return ref instanceof ContainerKey && qualifier == ContainerLock.CIS;
+        return ref.getClass() == LockFastPaths.CONTAINER_LOCKABLE
+                && qualifier == LockFastPaths.CONTAINER_INTENT_SHARED;
     }
 
     private Lock tryFastCisLock(CompatibilitySpace compatibilitySpace,

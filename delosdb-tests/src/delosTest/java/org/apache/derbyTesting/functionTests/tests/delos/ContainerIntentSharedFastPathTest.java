@@ -10,6 +10,10 @@ import org.apache.derby.impl.services.locks.ContainerIntentSharedFastPathTestSup
 
 /** Correctness proofs for the concurrent ContainerLock.CIS fast path. */
 public final class ContainerIntentSharedFastPathTest extends TestCase {
+    public void testStoreLockModesAreLoaded() {
+        ContainerIntentSharedFastPathTestSupport.verifyStoreLockModesAreLoaded();
+    }
+
     public void testMaterializesBeforeIncompatibleContainerLock() throws Exception {
         ContainerIntentSharedFastPathTestSupport.verifyMaterializationContract();
     }

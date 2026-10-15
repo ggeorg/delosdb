@@ -25,6 +25,7 @@ delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglom
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/ExternalAccessMethodProvider.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/access/conglomerate/IndexDefinitionSupport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/ArchivedUndoPage.java
+delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/raw/StoreLockFastPathSupport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosCrossEngineConsistencyReport.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseCommitTimingSnapshot.java
 delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java
@@ -145,6 +146,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/io/vfmem/DataStoreMemoryBudge
 delosdb-engine/src/main/java/org/apache/derby/impl/security/EngineStoreSecuritySupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/package-info.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockFastPaths.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockReports.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/EngineContextKernelSupport.java
@@ -182,6 +184,7 @@ delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/Context
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/StoreExecutionContext.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DelosHeapObjectDeserializationFilter.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/Resetable.java
+delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockFastPathSupport.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockObjectNames.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockReportSupport.java
 delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/locks/LockTransactionInfo.java

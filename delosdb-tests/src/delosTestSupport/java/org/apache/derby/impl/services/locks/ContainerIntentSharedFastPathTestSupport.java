@@ -13,10 +13,21 @@ import org.apache.derby.iapi.services.locks.CompatibilitySpace;
 import org.apache.derby.iapi.services.locks.LockOwner;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.ContainerLock;
+import org.apache.derby.iapi.store.raw.RowLock;
 
 /** Package-private lock-manager proofs for the concurrent CIS fast path. */
 public final class ContainerIntentSharedFastPathTestSupport {
     private ContainerIntentSharedFastPathTestSupport() {
+    }
+
+    /** The lock manager finds the store's lock modes, so the fast paths engage. */
+    public static void verifyStoreLockModesAreLoaded() {
+        if (LockFastPaths.CONTAINER_LOCKABLE != ContainerKey.class
+                || LockFastPaths.CONTAINER_INTENT_SHARED != ContainerLock.CIS
+                || LockFastPaths.CONTAINER_INTENT_EXCLUSIVE != ContainerLock.CIX
+                || LockFastPaths.ROW_SHARED != RowLock.RS2) {
+            throw new AssertionError("the lock manager did not load the store's lock modes");
+        }
     }
 
     public static void verifyMaterializationContract() throws Exception {
