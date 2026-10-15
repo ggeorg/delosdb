@@ -1,0 +1,139 @@
+{
+  "id": "DEL-ISO-008",
+  "description": "A snapshot still finds a deleted row through its unique indexes after other rows take its keys.",
+  "category": "snapshot-stability",
+  "providers": [
+    "mvcc"
+  ],
+  "storages": [
+    "file",
+    "memory"
+  ],
+  "connections": [
+    "embedded"
+  ],
+  "setup": [
+    "create table key_reuse_t (id int not null, payload varchar(32), email varchar(32) not null, constraint key_reuse_pk primary key (id), constraint key_reuse_email unique (email))${providerClause}",
+    "insert into key_reuse_t values (1, 'one', 'one@example')",
+    "insert into key_reuse_t values (2, 'two', 'two@example')"
+  ],
+  "sessions": {
+    "reader": {
+      "isolation": "REPEATABLE_READ",
+      "steps": {
+        "count": {
+          "sql": "select count(*) from key_reuse_t --DERBY-PROPERTIES constraint=key_reuse_pk\n",
+          "rows": [
+            "2"
+          ]
+        },
+        "byId": {
+          "sql": "select payload, email from key_reuse_t --DERBY-PROPERTIES constraint=key_reuse_pk\n where id = 1",
+          "rows": [
+            "one|one@example"
+          ]
+        },
+        "byEmail": {
+          "sql": "select id, payload from key_reuse_t --DERBY-PROPERTIES constraint=key_reuse_email\n where email = 'one@example'",
+          "rows": [
+            "1|one"
+          ]
+        },
+        "emails": {
+          "sql": "select email from key_reuse_t --DERBY-PROPERTIES constraint=key_reuse_email\n order by email",
+          "rows": [
+            "one@example",
+            "two@example"
+          ]
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    },
+    "writer": {
+      "isolation": "READ_COMMITTED",
+      "steps": {
+        "delete": {
+          "sql": "delete from key_reuse_t where id = 1",
+          "updateCount": 1
+        },
+        "reuseId": {
+          "sql": "insert into key_reuse_t values (1, 'one-v2', 'other@example')",
+          "updateCount": 1
+        },
+        "reuseEmail": {
+          "sql": "insert into key_reuse_t values (3, 'three', 'one@example')",
+          "updateCount": 1
+        },
+        "commit": {
+          "action": "COMMIT"
+        }
+      }
+    }
+  },
+  "permutations": [
+    {
+      "name": "keys-reused-behind-snapshot",
+      "operations": [
+        {
+          "type": "RUN",
+          "step": "reader.count"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.delete"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.reuseId"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.reuseEmail"
+        },
+        {
+          "type": "RUN",
+          "step": "writer.commit"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.byId"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.byEmail"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.emails"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.count"
+        },
+        {
+          "type": "RUN",
+          "step": "reader.commit"
+        }
+      ]
+    }
+  ],
+  "finalAssertions": [
+    {
+      "sql": "select id, payload, email from key_reuse_t order by id",
+      "rows": [
+        "1|one-v2|other@example",
+        "2|two|two@example",
+        "3|three|one@example"
+      ]
+    }
+  ],
+  "teardown": [
+    "drop table key_reuse_t"
+  ]
+}

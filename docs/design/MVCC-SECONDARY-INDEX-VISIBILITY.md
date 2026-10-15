@@ -1,6 +1,6 @@
 # MVCC secondary-index visibility
 
-Status: design accepted 2026-10-14. Stages 1 and 2 implemented 2026-10-14; stage 3 is next.
+Status: design accepted 2026-10-14. Stages 1 and 2 implemented 2026-10-14, stage 3 on 2026-10-15.
 
 ## Problem
 
@@ -124,12 +124,45 @@ keep their deleted entries.
 
 ### Stage 3: unique indexes keep both entries
 
-- A unique insert must not reuse a deleted-marked entry whose row is still visible to an active
-  snapshot. Both entries have to coexist, so the physical comparison of MVCC unique indexes
-  includes the row location. The duplicate check then ignores entries whose row is dead at the
-  latest committed state.
-- Derby's deferrable unique constraints already keep physical duplicates and check them
-  separately. Stage 3 reuses that mechanism and does not add a second uniqueness path.
+- A unique index rewrote a deleted entry with the same key in place, so an older snapshot lost the
+  deleted row (failure 3). `B2I.create` now gives every unique index on a base that keeps deleted
+  index entries (`Conglomerate.keepsDeletedIndexEntries`) a physical key that includes the row
+  location. A deleted entry and a new entry with its key then coexist. Creating the index is the
+  only place this is decided; the SQL layer and the data dictionary still see a unique index, so
+  plans are unchanged.
+- An insert checks the entries next to it for a live entry with the same key. This is the check
+  Derby's `uniqueWithDuplicateNulls` indexes already use (`BTreeController.compareLeftAndRightSiblings`),
+  so there is no second uniqueness path. It locks each matching entry's row before it reads the
+  deleted mark, so the mark is final, and it skips deleted entries. Unlike a
+  `uniqueWithDuplicateNulls` index, keys holding NULL are checked too, so a unique index still
+  treats NULLs as equal. Re-inserting exactly a deleted entry (same key and row, as a key moved
+  away and back) now checks the neighbours first, since another row may have taken the key.
+- The stored format is unchanged. The index is stored as unique (`nUniqueColumns` = key columns)
+  with the `uniqueWithDuplicateNulls` flag of the `ACCESS_B2I_V5_ID` format set, a pair Derby never
+  writes, since its duplicate-null indexes are stored as non-unique. Heap indexes are unaffected.
+- On RawStore MVCC tables the access method itself is the uniqueness authority
+  (V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md). It takes a unique-key lock and checks the latest
+  committed versions before the base row is written, so the B-tree check finds the conflicting
+  transaction finished and never waits. The experimental Gen2-A1 format leaves uniqueness to the
+  B-tree, and there the check is the authority.
+- The original sketch named the deferrable-constraint check in `IndexChanger`. It scans at read
+  committed, and an MVCC read lock does not wait for an uncommitted delete, so it could miss a key
+  whose delete later rolls back. The neighbour check takes an update lock instead.
+
+Stage 3 measurements (20,000 rows, medians of 101 runs, three alternating JVMs per side, before
+against after): primary-key point lookup 4.9–5.1 µs against 4.0–4.4 µs, unique-column lookup
+6.6–6.9 µs against 4.4–4.8 µs (both now take the prefix snapshot read), `count(*)` 1.34–1.37 ms
+against 1.41–1.48 ms. The probe also deletes and re-inserts the same 20 highest keys in every run
+without compressing. Stage 3 keeps all of those entries, about 2,000 by the end, so `max(id)`, which
+walks back past them, took 263–273 µs against 31–34 µs, and the insert and delete pair took
+433–448 µs against 401–402 µs, since each insert locks every retained entry of its key.
+
+Limits: retained entries cost reads and inserts of their keys until in-place compress purges them.
+The background maintenance service does not purge indexes yet (stage 2), so tables that reuse the
+same keys often grow slower between compresses; purging indexes in the background is the
+follow-up. MVCC unique indexes created before stage 3 keep rewriting deleted entries in place until
+they are created again. MVCC tables support neither full compress nor truncate, so creating the
+index again is the only rebuild.
 
 ## Evidence for each stage
 
@@ -139,7 +172,11 @@ keep their deleted entries.
   behind the snapshot, delete behind the snapshot through an index, re-insert of a deleted unique
   key, and an empty first read. Stage 1 adds DEL-ISO-005 (inserts and deletes behind the
   snapshot), DEL-ISO-006 (key-moving updates, from an older snapshot and from the writing
-  transaction) and DEL-ISO-007 (an empty first read).
+  transaction) and DEL-ISO-007 (an empty first read). Stage 3 adds DEL-ISO-008 (primary and unique
+  keys of a deleted row reused behind the snapshot).
+- `MvccUniqueIndexKeyReuseTest` for stage 3: both entries after reuse and across a restart, an
+  index built over existing rows, rollback of a reuse, purge by stage 2, and duplicate outcomes
+  that match a heap table, including NULLs and a key moved away and back.
 - The heap/MVCC differential fuzz corpus and `delosConcurrencyTests`.
 - Recovery, for stages 2 and 3: retained entries and their vacuum must survive a crash.
 - The matched covering probe and the insert probe. Stage 1 adds one directory check for each

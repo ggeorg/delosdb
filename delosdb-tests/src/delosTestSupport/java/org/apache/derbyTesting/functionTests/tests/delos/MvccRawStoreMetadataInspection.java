@@ -1335,6 +1335,18 @@ final class MvccRawStoreMetadataInspection {
         return deleted;
     }
 
+    /** The stored name of an index, or of the index backing a constraint. */
+    static String backingIndexName(Connection connection, String name) throws Exception {
+        String upper = name.toUpperCase(java.util.Locale.ROOT);
+        String sql = "select c.conglomeratename from sys.sysconglomerates c, sys.sysconstraints k,"
+                + " sys.syskeys y where k.constraintname = '" + upper
+                + "' and y.constraintid = k.constraintid and c.conglomerateid = y.conglomerateid";
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(sql)) {
+            return resultSet.next() ? resultSet.getString(1) : upper;
+        }
+    }
+
     /** Purges one index, by its exact name, of schema APP, as in-place compress does per conglomerate. */
     static void purgeIndexConglomerate(Connection connection, String indexName) throws Exception {
         transactionManager(connection).purgeConglomerate(

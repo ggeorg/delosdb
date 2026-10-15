@@ -12,8 +12,6 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.Statement;
 
 /**
  * Stage 2 of docs/design/MVCC-SECONDARY-INDEX-VISIBILITY.md: deleted-marked
@@ -154,18 +152,6 @@ public final class MvccSecondaryIndexReclamationTest extends MvccSqlTestSupport 
 
     private static int deleted(Connection connection, String indexName) throws Exception {
         return MvccRawStoreMetadataInspection.deletedIndexEntryCount(
-                connection, backingIndexName(connection, indexName));
-    }
-
-    /** The stored name of an index, or of the index backing a constraint. */
-    private static String backingIndexName(Connection connection, String name) throws Exception {
-        String upper = name.toUpperCase(java.util.Locale.ROOT);
-        String sql = "select c.conglomeratename from sys.sysconglomerates c, sys.sysconstraints k,"
-                + " sys.syskeys y where k.constraintname = '" + upper
-                + "' and y.constraintid = k.constraintid and c.conglomerateid = y.conglomerateid";
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(sql)) {
-            return resultSet.next() ? resultSet.getString(1) : upper;
-        }
+                connection, MvccRawStoreMetadataInspection.backingIndexName(connection, indexName));
     }
 }

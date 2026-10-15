@@ -624,6 +624,14 @@ public class B2I extends BTree
             rawtran, segmentId, input_conglomid, template, 
             properties, getTypeFormatId(), temporaryFlag);
 
+        // A snapshot may still need a deleted entry of a unique key after
+        // another row has taken the key, so such a base keeps both entries.
+        if (isUnique()
+                && baseConglomerate(xact_manager).keepsDeletedIndexEntries())
+        {
+            keepDeletedEntriesOfUniqueKeys();
+        }
+
         // open the base conglomerate - to get the lock
         ConglomerateController base_cc = 
             xact_manager.openConglomerate(
@@ -939,12 +947,7 @@ public class B2I extends BTree
         // split is about to happen. A base table whose snapshots can still
         // need them keeps them until it says no snapshot does; purge those.
         // Other bases are not opened, so their locks are left alone.
-        Conglomerate base_conglomerate =
-            xact_manager.findExistingConglomerateFromKey(
-                new ContainerKey(
-                    id.getSegmentId(),
-                    xact_manager.findContainerid(baseConglomerateId)));
-        if (!base_conglomerate.keepsDeletedIndexEntries())
+        if (!baseConglomerate(xact_manager).keepsDeletedIndexEntries())
         {
             return;
         }
@@ -961,6 +964,20 @@ public class B2I extends BTree
         {
             base_cc.close();
         }
+    }
+
+    /**
+     * The conglomerate of the base table, which lives in this index's segment.
+     *
+	 * @exception  StandardException  Standard exception policy.
+     **/
+    private Conglomerate baseConglomerate(TransactionManager xact_manager)
+        throws StandardException
+    {
+        return xact_manager.findExistingConglomerateFromKey(
+            new ContainerKey(
+                id.getSegmentId(),
+                xact_manager.findContainerid(baseConglomerateId)));
     }
 
 	public void compressConglomerate(
@@ -1172,7 +1189,9 @@ public class B2I extends BTree
     public void writeExternal(ObjectOutput out) throws IOException {
         writeExternal_v10_3 (out);
         if (conglom_format_id == StoredFormatIds.ACCESS_B2I_V5_ID)
-            out.writeBoolean (isUniqueWithDuplicateNulls());
+            out.writeBoolean (
+                isUniqueWithDuplicateNulls()
+                    || keepsDeletedEntriesOfUniqueKeys());
     }
 
     /**
@@ -1245,7 +1264,15 @@ public class B2I extends BTree
             }
         }
         if (conglom_format_id == StoredFormatIds.ACCESS_B2I_V5_ID) {
-            setUniqueWithDuplicateNulls(in.readBoolean());
+            // Both flavours check the neighbours of an insert. A
+            // uniqueWithDuplicateNulls index is stored as non-unique; a unique
+            // index keeping deleted entries is stored as unique.
+            boolean checksNeighbours = in.readBoolean();
+            if (checksNeighbours && isUnique()) {
+                keepDeletedEntriesOfUniqueKeys();
+            } else {
+                setUniqueWithDuplicateNulls(checksNeighbours);
+            }
         }
 	}
 }

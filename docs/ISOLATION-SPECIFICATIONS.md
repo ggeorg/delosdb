@@ -109,7 +109,7 @@ committed key.
 
 ```text
 DEL-ISO-001..004       snapshot stability and documented read anomaly
-DEL-ISO-005..007       snapshot reads through secondary indexes of MVCC tables
+DEL-ISO-005..008       snapshot reads through secondary indexes of MVCC tables
 DEL-ISO-010..012       savepoint rollback
 DEL-DEADLOCK-001..004  two-row, conversion, three-session and survivor consistency
 DEL-TRAVERSAL-001..004 update/delete traversal, key movement and row identity

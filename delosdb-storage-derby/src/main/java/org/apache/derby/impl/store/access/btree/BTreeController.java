@@ -635,7 +635,8 @@ public class BTreeController extends OpenBTree implements ConglomerateController
      * Compares immidiate left and right records to check for duplicates.
      * This methods compares new record (being inserted) with the record
      * in immidate left and right postion to see if its duplicate (only for
-     * almost unique index and for non null keys)
+     * indexes that check their neighbours on insert; an almost unique index
+     * skips keys holding null)
      * @param rowToInsert row being inserted
      * @param insert_slot slot where rowToInsert is being inserted
      * @param targetleaf page where rowToInsert
@@ -649,9 +650,11 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                             int insert_slot,
                             LeafControlRow  targetleaf) throws StandardException {
         //proceed only if almost unique index
+        if (!this.getConglomerate().checksUniqueKeyOnInsert()) {
+            return NO_MATCH;
+        }
         if (this.getConglomerate().isUniqueWithDuplicateNulls()) {
             int keyParts = rowToInsert.length - 1;
-            boolean hasnull = false;
             for (int i = 0; i < keyParts; i++) {
                 //keys with null in it are unique
                 //no need to compare
@@ -659,17 +662,14 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                     return NO_MATCH;
                 }
             }
-            if (!hasnull) {
-                StoreDataValue[] index = runtime_mem.get_template(getRawTran());
-                int ret = comparePreviousRecord(insert_slot - 1,
-                        targetleaf, index, rowToInsert);
-                if (ret > 0) {
-                    return ret;
-                }
-                return compareNextRecord(insert_slot, targetleaf, index, rowToInsert);
-            }
         }
-        return NO_MATCH;
+        StoreDataValue[] index = runtime_mem.get_template(getRawTran());
+        int ret = comparePreviousRecord(insert_slot - 1,
+                targetleaf, index, rowToInsert);
+        if (ret > 0) {
+            return ret;
+        }
+        return compareNextRecord(insert_slot, targetleaf, index, rowToInsert);
     }
 
     private LeafControlRow findInsertLeaf(SearchParameters sp)
@@ -873,7 +873,21 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                     if (this.getConglomerate().nKeyFields ==
                         this.getConglomerate().nUniqueColumns)
                     {
-                        // The row that we found deleted is exactly the new row.
+                        // The row that we found deleted is exactly the new
+                        // row. Another row may have taken its key since it
+                        // was deleted, so check the neighbours first.
+                        if (getConglomerate().checksUniqueKeyOnInsert())
+                        {
+                            int ret = compareLeftAndRightSiblings(rowToInsert,
+                                    insert_slot, targetleaf);
+                            if (ret == MATCH_FOUND)
+                            {
+                                ret_val = ConglomerateController.ROWISDUPLICATE;
+                                break;
+                            }
+                            if (ret == RESCAN_REQUIRED)
+                                continue;
+                        }
                         targetleaf.page.deleteAtSlot(
                             insert_slot, false, this.btree_undo);
 
@@ -974,7 +988,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
                 // on the page returned by the search.
                 insert_slot = sp.resultSlot + 1;
                 result_slot = insert_slot + 1;
-                if (getConglomerate().isUniqueWithDuplicateNulls())
+                if (getConglomerate().checksUniqueKeyOnInsert())
                 {
                     int ret = compareLeftAndRightSiblings(rowToInsert,
                             insert_slot, targetleaf);
@@ -1015,7 +1029,7 @@ public class BTreeController extends OpenBTree implements ConglomerateController
 
                 // start splitting ...
             }
-            if (getConglomerate().isUniqueWithDuplicateNulls())
+            if (getConglomerate().checksUniqueKeyOnInsert())
             {
                 int ret = compareLeftAndRightSiblings(rowToInsert,
                         insert_slot, targetleaf);

@@ -22,6 +22,7 @@ DEL-ISO-004	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DE
 DEL-ISO-005	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-005.json	snapshot-stability	mvcc	file,memory	embedded
 DEL-ISO-006	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-006.json	snapshot-stability	mvcc	file,memory	embedded
 DEL-ISO-007	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-007.json	snapshot-stability	mvcc	file,memory	embedded
+DEL-ISO-008	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-008.json	snapshot-stability	mvcc	file,memory	embedded
 DEL-ISO-010	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-010.json	savepoint-rollback	heap,mvcc	file,memory	embedded
 DEL-ISO-011	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-011.json	savepoint-rollback	heap,mvcc	file,memory	embedded
 DEL-ISO-012	org/apache/derbyTesting/functionTests/tests/delos/isolation/specs/DEL-ISO-012.json	savepoint-rollback	heap,mvcc	file,memory	embedded

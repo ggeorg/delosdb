@@ -163,6 +163,16 @@ public abstract class BTree extends GenericConglomerate
 	**/
 	boolean uniqueWithDuplicateNulls = false;
 
+	/**
+	Set for a unique index whose base table keeps deleted index entries while
+	a snapshot can need them (MVCC). A deleted entry and a new entry with the
+	same key must then coexist, so the row location is part of the physical
+	key (nUniqueColumns == nKeyFields) and an insert checks the entries next
+	to it for a live entry with its key, as a uniqueWithDuplicateNulls index
+	does, except that keys holding NULL are checked too.
+	**/
+	boolean uniqueKeepingDeletedEntries = false;
+
     /**
     Maximum rows per page to place on a btree leaf or nonleaf page.  Used
     by testing to finely control split points.  Only changed for debugging
@@ -688,6 +698,34 @@ public abstract class BTree extends GenericConglomerate
         return uniqueWithDuplicateNulls;
     }
 
+    /**
+     * Makes this unique index keep a deleted entry and a new entry with the
+     * same key side by side, see uniqueKeepingDeletedEntries.
+     */
+    protected final void keepDeletedEntriesOfUniqueKeys()
+    {
+        nUniqueColumns = nKeyFields;
+        uniqueKeepingDeletedEntries = true;
+    }
+
+    /**
+     * Whether this index keeps a deleted entry and a new entry with the same
+     * unique key side by side.
+     */
+    public final boolean keepsDeletedEntriesOfUniqueKeys()
+    {
+        return uniqueKeepingDeletedEntries;
+    }
+
+    /**
+     * Whether an insert checks the entries next to it for a live entry with
+     * the same key, because the physical key includes the row location.
+     */
+    final boolean checksUniqueKeyOnInsert()
+    {
+        return uniqueWithDuplicateNulls || uniqueKeepingDeletedEntries;
+    }
+
     /**************************************************************************
      * Public Methods of Conglomerate Interface:
      **************************************************************************
@@ -1062,7 +1100,10 @@ public abstract class BTree extends GenericConglomerate
 		out.writeLong(id.getContainerId());
 		out.writeInt((int) id.getSegmentId());
 		out.writeInt((nKeyFields));
-		out.writeInt((nUniqueColumns));
+        // A unique index keeping deleted entries is stored as unique, and
+        // B2I marks it with its uniqueWithDuplicateNulls flag.
+		out.writeInt(
+            uniqueKeepingDeletedEntries ? nKeyFields - 1 : nUniqueColumns);
 		out.writeBoolean((allowDuplicates));
 		out.writeBoolean((maintainParentLinks));
 
