@@ -1,6 +1,6 @@
 # DelosDB as an educational reference codebase
 
-**Decision direction:** preserve Derby-compatible databases, JDBC entry points and DRDA; reorganize internals incrementally. **Status:** comparison and migration design, with the first build-script extraction implemented. This is not the current module manifest. The current architecture remains in [V1-MODULE-ARCHITECTURE.md](../V1-MODULE-ARCHITECTURE.md).
+**Decision direction:** preserve Derby-compatible databases, JDBC entry points and DRDA; reorganize internals incrementally. **Status:** comparison and migration design. Implemented so far: the benchmark restructuring, the kernel-service boundary slices, the engine build consolidation (2026-10-15) and the step 6 teaching material. This is not the module manifest; the current modules are in [V1-MODULE-ARCHITECTURE.md](../V1-MODULE-ARCHITECTURE.md).
 
 ## Purpose
 
@@ -88,14 +88,14 @@ Embedded JDBC initially stays with SQL: a separate adapter module is justified o
 
 ## Candidate build owners
 
-The existing module identities remain authoritative until each migration is verified and the structured manifest is updated. These candidate names describe responsibility, not a promised fixed module count.
+The existing module identities remain authoritative until each migration is verified and the structured manifest is updated. These candidate names describe responsibility, not a promised fixed module count. After the engine build consolidation, the engine is one project and one JPMS module, as in Derby; ownership inside it is by package group, not by Gradle project.
 
 | Current owner | Candidate destination | Prerequisite |
 |---|---|---|
-| commons, annotations, runtime-api | foundation/runtime contracts, with optional annotations merged only if compatibility packaging permits | Classify shared messages, errors, serialization, contexts and service APIs; retain module/jar facades where supported |
+| commons, annotations | foundation contracts, with annotations merged only if compatibility packaging permits (runtime-api was merged into the engine's kernel contracts, 2026-10-15) | Classify shared messages, errors, serialization, contexts and service APIs; retain module/jar facades where supported |
 | derby-store-api | the engine's `iapi.store` packages (merged 2026-10-15) | Preserve neutral page/access/transaction/type contracts and their public binary names |
 | engine service implementations | packages of the engine (see the consolidation below; `delosdb-kernel` is withdrawn) | Remove SQL implementation dependencies; classify storage-specific lock/cache fast paths rather than assuming they are generic |
-| engine SQL/catalog/types/JDBC | `delosdb-sql` | Keep compiler and executor together initially; extract neutral models before separate compiler/executor modules |
+| engine SQL/catalog/types/JDBC | the engine's SQL package group; no separate `delosdb-sql` project, since SQL and storage share one JPMS module | Keep compiler and executor together; extract neutral models before any compiler/executor split |
 | storage-derby's `impl.store.raw` | the engine's `impl.store.raw` packages (merged 2026-10-15) | Preserve one persistence authority and lifecycle; separate cross-access helpers into real contracts |
 | storage-derby's `impl.store.access` | the engine's `impl.store.access` packages (merged 2026-10-15) | Remove direct implementation coupling to helpers such as `RawStorePreparedRow` and `HeapPageReadImageAccess`; retain transaction integration |
 | storage-mvcc | merged into the engine as `impl.store.access.mvcc` (2026-10-15) | Preserve peer access-method status, provider discovery and shared RawStore ownership |
@@ -103,7 +103,7 @@ The existing module identities remain authoritative until each migration is veri
 | tests and benchmark support | component-local tests, shared compatibility/integration tests, dedicated benchmarks | Preserve suite registry, adaptation provenance, crash-worker classpaths and external-engine isolation |
 | tools, runner, optional tools, demos, locales, OSGi/build tooling | tooling, examples, resources and compatibility assembly | Classify active capabilities before retirement or consolidation; preserve distributions and documented entry points |
 
-Do not recreate the retired storage-api/storage-bridge/storage-io implementations under a new name. `store-contracts` would be a rename/refinement of the current neutral contract owner, not another persistence layer. Do not introduce a module for each lock, latch, page, optimizer rule or diagnostic flag.
+Do not recreate the retired storage-api/storage-bridge/storage-io implementations under a new name. The store contracts are the engine's `iapi.store` packages, a refinement of the former neutral contract owner, not another persistence layer. Do not introduce a module for each lock, latch, page, optimizer rule or diagnostic flag.
 
 ## Package migration rules
 
@@ -145,13 +145,13 @@ The objective is an educational reference database that can be understood and fo
 5. **Preserve and prove compatibility.** For each relevant core slice, run focused SQL/storage/concurrency/recovery tests and packaged embedded/DRDA checks. Use reopen/upgrade and generated-activation/resource/security checks when that boundary is affected. Run matched performance comparisons when execution could change; keep workload budgets, durability and measurement conditions explicit and feasible on the laptop.
 6. **Make forks teachable.** Maintain the reading guide and add an executable query trace, a component change recipe and focused build/test commands. A new contributor should know the algorithm's owner, its contracts and the evidence required to modify it.
 
-Completed so far: local reference-engine/source-owner assessment; source guide and compatibility-preserving target structure; occupancy Gradle registration extraction; worker process/command/configuration; shared benchmark model; worker and per-case lifecycles; fixtures/diagnostics; concurrent SQL execution and verification/restoration; legacy experiment families; parent container/host/command/report owners. The core query/storage dependency map and compatibility-sensitive name counts are recorded below. Two Delos-authored package families have moved within `org.apache.derby`: `impl.services.storetypes` and `impl.store.access.provider`. The lock manager reaches the SQL layer only through a runtime-api contract. Gradle module boundaries are unchanged.
+Completed so far: local reference-engine/source-owner assessment; source guide and compatibility-preserving target structure; occupancy Gradle registration extraction; worker process/command/configuration; shared benchmark model; worker and per-case lifecycles; fixtures/diagnostics; concurrent SQL execution and verification/restoration; legacy experiment families; parent container/host/command/report owners. The core query/storage dependency map and compatibility-sensitive name counts are recorded below. Two Delos-authored package families have moved within `org.apache.derby`: `impl.services.storetypes` and `impl.store.access.provider`. The lock manager reaches the SQL layer only through a kernel contract. `derby-store-api`, `storage-derby`, `storage-mvcc` and `runtime-api` are merged into the engine project and module, with package groups checked in their place (engine build consolidation, below).
 
 The lock manager now reaches neither SQL nor the store contracts: lock-object names come through `LockReportSupport` and the store's fast-path lock modes through `LockFastPathSupport`. The cache no longer imports them either: the store asks for lock-free keeps when it creates its container cache. The cipher factory takes its property names from its own contract. No `impl.services` package now imports the SQL layer or the store contracts. A separate `delosdb-kernel` project is no longer proposed: it would be one more project compiled into the engine module, which adds build machinery without JPMS isolation. Step 4 now follows the engine build consolidation below; its first action is the package-boundary check. Larger historical experiment families can be refined when a concrete maintenance or teaching need warrants it. No mass namespace rename, storage-format change, second transaction/WAL authority or broad compiler/executor split is authorized by this plan.
 
 Step 6, teachable forks (2026-10-15): besides the read trace (`readableEngineDemo`), `readableWriteDemo` follows one transaction's insert through locks, logged page changes, commit and recovery, observed through Derby's diagnostic tables, with the owners in READABLE-ENGINE.md. SOURCE-GUIDE.md describes the consolidated build (one engine module, package groups and their check), separates benchmark tooling from the core owners, and has a component table: owner, contract to keep, focused proof and broader proof for the optimizer, heap page placement, B-tree indexes, MVCC visibility and uniqueness, the lock manager, the cache, the log and recovery, and the package boundaries.
 
-## Engine build consolidation (proposed)
+## Engine build consolidation (implemented)
 
 Status: implemented 2026-10-15: the package-boundary check and the `storage-mvcc`, `storage-derby`, `derby-store-api` and `runtime-api` merges.
 
