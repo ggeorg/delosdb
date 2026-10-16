@@ -199,6 +199,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineRowLocat
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreRowLocationBridge.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreTypeSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeDeletedEntryReclaimer.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeInsertRoutingSnapshots.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/index/IndexDefinitions.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/conglomerate/D_DiagnosticFormatting.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/heap/DerbyHeapContainerFiles.java
@@ -212,6 +213,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStor
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreIndexedReader.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreLogicalLock.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreMaintenanceService.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndex.java
@@ -223,12 +225,15 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStor
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTableMetadata.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionStatusMaterializer.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionStatuses.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionRows.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnostics.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort/SortMemoryPolicy.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedBeforeImage.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedImageCompensation.java
@@ -237,7 +242,13 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedUpdate
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/D_RawPageSanityAssertions.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjectionDirectory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/DelosRawStoreIoFaultInjector.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/PreparedInsertRecord.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/PreparedStoreField.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/RawStoreOccupancy.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/RawStorePreparedInsertAccess.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/RawStorePreparedRow.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/StoredPageSanityChecker.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/UpdateFieldsOperation.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/package-info.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/package-info.java

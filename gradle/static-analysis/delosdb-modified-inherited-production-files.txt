@@ -120,6 +120,7 @@ delosdb-engine/src/main/java/org/apache/derby/iapi/store/access/conglomerate/Met
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/access/conglomerate/SortFactory.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/access/conglomerate/TransactionManager.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/ContainerKey.java
+delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/LockingPolicy.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/LogicalUndoable.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/Page.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/RawStoreFactory.java
@@ -183,6 +184,9 @@ delosdb-engine/src/main/java/org/apache/derby/impl/services/jmx/JMXManagementSer
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/AbstractPool.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/ConcurrentLockSet.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Deadlock.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Lock.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockControl.java
+delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockSpace.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java
 delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/FileMonitor.java
@@ -406,9 +410,11 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort/SortScan.ja
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort/UniqueWithDuplicateNullsMergeSort.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/AllocExtent.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/AllocationCache.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseContainer.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseContainerHandle.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BasePage.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/CachedPage.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ContainerHandleActionOnCommit.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java
@@ -433,10 +439,12 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/TruncateOnComm
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/UpdateFieldOperation.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/CheckpointOperation.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/ChecksumOperation.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogAccessFile.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/ReadOnly.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/InternalXact.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/RowLocking2.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/TransactionTableEntry.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/XactFactory.java

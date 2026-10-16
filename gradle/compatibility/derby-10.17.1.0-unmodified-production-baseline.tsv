@@ -203,7 +203,6 @@ e576391d6b02f7785369e34d32aeef78aa1aa2d84845e285f4f5e592d56530c0	delosdb-engine/
 9523548a72e129400859f3dbb54f5bab5447b585d80b6ac336ecb21fc197f12b	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/D_RowLock.java
 b441a800fafd2deb7ffeb51f2bc877aaed90f108c3176fc7806834773d56443f	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/FetchDescriptor.java
 c83dbbdf94c1cccf2f9ef7af26a0ad7afab700df8d54b19cb98be429ac2323d5	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/GlobalTransactionId.java
-cc93c72b73abf369a795fcb7192e383a96d61a08d6f616abfbe3c7a914d5da35	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/LockingPolicy.java
 7b2c8f8b216f499ba5418bb52a4e42d332c17941d9e7f34d131c01c91cdd107a	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/Loggable.java
 80e7a70eabb9c84da9c953567c2bc966b289f373a525876e2a8968947b44137e	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/PageKey.java
 0a1c5892da227e475559f65cd02d526de99142629c04f182b2e913aa3b9cd58d	delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/PageTimeStamp.java
@@ -543,9 +542,6 @@ aa8be6c4ff9d08138baf776c2a182202c192bb8e98f48c438b50640381dfe865	delosdb-engine/
 8de9121a94e114084e2b018fc6d5ff470e7af2e0bfd5193cb94fe02ce7951ed5	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Constants.java
 4bf79f444ce4c79d0dc94f548a130c8e41ccdfe05a4e0768c2d835ad983ec626	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Control.java
 61dc66e15336dd498beae08ea6bdc84e4b793f0883c8338d9e534304abaccb6b	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/D_LockControl.java
-bcd138a115d31c818b5fe2cc408b1694f9f8bc26a225d872f1f43d4bc3cd902d	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Lock.java
-b306da4a2a803a45aa6a15632bc253866b2e9f022409c00819e505e7ee5b6dfe	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockControl.java
-38348e36748295de53167d897565efc71e7f30bca7dceeef2e90269a80d181ab	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockSpace.java
 02466c3d8d5ef47dda1c34aa7cd88aefde64ea7e78e468adb43f100ad3c3f1c9	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockTable.java
 1004c91b2901b670f1e749e1262ee61f4a819cb5b43f128a988a525f9002a7e1	delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/LockTableVTI.java
 b80774975dadb4f8021d2ebb3bf6b33e8ad5de4aacdf94dc3bf897adabaa2697	delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/ModuleInstance.java
@@ -1125,9 +1121,7 @@ d8de4f5031805dfbafa9154ffe4be83d3c1e7824e7f74ebb30d4a7cf5c0786ba	delosdb-engine/
 73dcc84c64b9a31f212b481a251a5bc2d3c519e9334b37945a91e18d65becd1e	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/AllocPage.java
 7305892dda5db8af793e3eba3be79adacd3eae704005cf4e039a3e3d05f3faf6	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/AllocPageOperation.java
 b9e0a748fc7e15d4cc18dc83a47e749728a77d454fd3c7c95f9c6b4185ff7073	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/AllocationActions.java
-c4c6e607cb4a403b9b93ffec03f64b32502a9c69e50bb6ef650df964cef64a6c	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/AllocationCache.java
 2d0d724a8c2a38e09146c7ff0ace7b5ab45c6cc9f6780a94ccd3e465e202d479	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactoryJ4.java
-6605fd05688741754aca19a2a6b3d86e7dd047a372d7ea234702678b6cf342a9	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BasePage.java
 50e90dec1d296d9555d19e71cd0c36d7a52de60c0ed31cb796551589be98f7df	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BufferedByteHolderInputStream.java
 bfa2a397c5302c992c576318837f3908cd5c7ffa746b5862f89e8bc378b6a4f3	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ByteHolder.java
 5db4fef2346a14fa70c9fd447d927005b28d5a3906249b857be38bf5b5a551d4	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ByteHolderInputStream.java
@@ -1176,7 +1170,6 @@ e8d09488ac69cbf504203980bcc11b7631018af0ac4b209c08b47ba9c1a0f1a1	delosdb-engine/
 d998babd7f21086e9f6fc8f55bf852fd74f09667bde1dea398493fba878f0c43	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/UpdateOperation.java
 46646771464fadaec4a643e6073edd75e9fd21b8418916718ab93a2ef40d5f50	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/D_FlushedScan.java
 49bfbaa9cc701116395c9452e37263210d75b069e5fab03c72cb4e6ba0571ef3	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/D_LogToFile.java
-762cc0fb7b17e7e38257a1f2b33ec497e3d3acddfeea90a6c6ddef25f152591c	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/FileLogger.java
 595afa89d1ad3390e6209353f4139c2d13471a3c502ba95c8312fdaf8061782d	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/FlushedScan.java
 ed4a9256f5c611e449858835300f6bb49cb93727720a12174998f4212d54381f	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/FlushedScanHandle.java
 f703fbe638f331af70f371fc13d4eaf3307221357bd2b78649f57d436aca595d	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogAccessFileBuffer.java
@@ -1193,7 +1186,6 @@ cfd9c5bafb36d923070fa30e51e98a48a84b35f1d42d10543984d30f2e86328b	delosdb-engine/
 4cfb56ee67b3d0d79fba0ca4e6a6176a89141574661fced96a67f21e796e2b1e	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/GlobalXactId.java
 83951bc9098db0ff1fa27e047d0b21c096425d5ef7b1492e04b8a07bdb4c7efa	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/NoLocking.java
 1febf7665b85161230f07d33e7cfe39c1e03eef0b2258c21c9442010274fe1a9	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/RowLocking1.java
-d0acdd7e321844372eaddb15f43cda025595413a45134ba2bca658615f20a391	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/RowLocking2.java
 bea78c3b74ec87de6b6c69d9337a35e95305b89cc98d9243e2075f6a8f6ca865	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/RowLocking2nohold.java
 95dc8db61a5fcf7a8d1083651059c1a403d5195c912ddbc83f1ce6904dfbf7ce	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/RowLocking3.java
 4efd8993151f09db6a4a9fd7f3b532ea355c0a57de975657730a6ad1364a4450	delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/RowLocking3Escalate.java
@@ -1214,7 +1206,6 @@ dec4ad9f0f23b8f44cd91665d84e7a280d9b9d9bfa232734ed038b856a5cd796	delosdb-engine/
 1c48256acd235949cee1343b9c1a2402f938f79e44210c8a55c26bb160e2bce3	delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/net/SlaveAddress.java
 ca61fca0e10deb96e5be9190139368271a0d11d1e316d08732326ea9a261c8ea	delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java
 259cbde837f0e45e59f868078cab438c65eb97385d2e4e294598ed8b44cbd277	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreIndexedReadMetrics.java
-088e93a523153b8049395fab16cb1cac5011d38adf0dcc20a09a3692553b8092	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreIndexedReader.java
 4141d078433cf91abdf47053cabf66e2d2b724e1196b6e4e3e83f1391e45943f	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndexPredicate.java
 a746cc13a2bc09b4c492d4fc9666fde540d59a111a3aad60aa007efbe52f87fb	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionReader.java
 4d3a539bb675ca690104a2edceb96d212f74f24e199bf97bc81ba7be4e393d30	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnostics.java
