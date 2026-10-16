@@ -109,7 +109,10 @@ public final class StoreValueCopySupport
         }
         for (int i = 0; i < destination.length && i < source.length; i++)
         {
-            if (validColumns != null && !validColumns.isSet(i))
+            // As in RowUtil, a column past the end of validColumns is not
+            // requested.
+            if (validColumns != null
+                    && !(i < validColumns.getLength() && validColumns.isSet(i)))
             {
                 continue;
             }
