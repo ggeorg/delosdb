@@ -193,6 +193,17 @@ The current forbidden project edges (engine → MVCC, MVCC → engine implementa
 5. Update the module documents and the target manifest. Done with each merge.
 6. Then list `runtime-api`'s consumers and decide whether it stays a separate module.
 
+### `runtime-api` review (2026-10-15)
+
+`delosdb-runtime-api` is a real JPMS module, `io.github.ggeorg.delosdb.runtime.api`, with 138 source files in 21 packages: `org.apache.derby.io`, `iapi.util`, `iapi.xml` and 18 `iapi.services.*` packages (io, context, monitor, loader, locks, cache, compiler, property, crypto, daemon, diag, memory, security, timer, uuid, classfile), plus DelosDB's kernel contracts such as `LockReportSupport` and `LockFastPathSupport`.
+
+- **Consumers, by imports in production code:** the engine (2,375), the tests (229), `optionaltools` (31), `server` (17), `storeless` (14), `tools` (5, a static module dependency), `buildtools` (1) and `pptesting` (1). `client` and `runner` do not use it. Its original reason, giving the storage projects contracts without the engine, ended with the consolidation.
+- **Derby keeps all of these packages in `org.apache.derby.engine`.** It exports `iapi.services.io`, `iapi.services.loader` and `iapi.util` to everyone, `iapi.services.monitor` only to server, tools, optionaltools and tests, and `org.apache.derby.io` only to optionaltools and tests; the rest are not exported.
+- **DelosDB exports all 21 packages to every module**, a wider surface than Derby: module-path code can reach the monitor, contexts, lock and cache contracts.
+- **`derby.jar` does not contain these classes.** The engine module `requires` `runtime.api`, `annotations` and `spi`, so a Derby-compatible deployment needs `delosdb-runtime-api.jar` (and those two jars) besides `derby.jar` and `derbyshared.jar`, where Derby's `derby.jar` needs only `derbyshared.jar`.
+
+Recommendation: merge `runtime-api` into the engine project and module, as Derby has it, with Derby's export set for the inherited packages and DelosDB's own contracts unexported. `derby.jar` then carries its kernel contracts again, the public module surface shrinks to Derby's, and one module concept goes. Costs: the module name `io.github.ggeorg.delosdb.runtime.api` disappears (only `server`, `tools` and `optionaltools` require it, and `commons` exports six packages to it); the generated `ClassSizeCatalogImpl` moves to the engine; `buildtools` and `storeless` compile against engine classes; module-path code that used the wider exports loses them, which matches Derby. Whether `annotations` and `spi` should stay separate runtime jars is a separate question: `spi` is a supported public extension API.
+
 ## Core query and storage dependency map
 
 Snapshot: `e9099f63`. The inventory command above regenerates the evidence. It also reports package strongly connected components for each source owner, and imports from contract packages into implementation packages. A contract package is one without an `.impl.` segment, following the inherited Derby `iapi`/`impl` convention. These are import edges only. ServiceLoader providers, class-name lookups such as the `RowLocationServicesRegistry` fallback, generated activations and stored format ids are not counted. Each of them is a compatibility-sensitive name in its own right.
