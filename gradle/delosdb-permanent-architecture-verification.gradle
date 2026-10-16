@@ -14,6 +14,8 @@ final Object delosV1ArchitectureReport = rootProject.layout.buildDirectory.file(
         'reports/delosdb/v1-module-architecture-static-analysis.txt')
 final File delosV1ModuleTarget = rootProject.file(
         'gradle/static-analysis/delosdb-v1-final-module-target.txt')
+final File delosEnginePackageBoundaries = rootProject.file(
+        'gradle/static-analysis/delosdb-engine-package-boundaries.txt')
 
 tasks.register('delosModuleDependencyReport', Exec) {
     group = 'verification'
@@ -45,6 +47,11 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis', Exec) {
     inputs.files(delosModuleDependencyReportDir)
     inputs.file(
             'delosdb-engine/src/main/java/org/apache/derby/impl/services/monitor/BaseMonitor.java')
+    inputs.file(delosEnginePackageBoundaries)
+    inputs.files(rootProject.fileTree(rootProject.projectDir) {
+        include 'delosdb-*/src/main/java/**/*.java'
+        exclude '**/build/**'
+    })
     outputs.file(delosModuleBoundaryReport)
 
     doFirst {
@@ -54,6 +61,7 @@ tasks.register('delosModuleDependencyBoundaryStaticAnalysis', Exec) {
                 '--root', rootProject.projectDir.absolutePath,
                 '--dependency-report-dir',
                 delosModuleDependencyReportDir.get().asFile.absolutePath,
+                '--package-boundaries', delosEnginePackageBoundaries.absolutePath,
                 '--output', delosModuleBoundaryReport.get().asFile.absolutePath
         ])
     }

@@ -1,0 +1,35 @@
+# Package groups inside the org.apache.derby.engine module and the imports
+# each group may make. JPMS cannot isolate packages within one module, so
+# this manifest, checked by delosModuleDependencyBoundaryStaticAnalysis, is
+# the boundary. Evidence is imports and fully qualified references in
+# production code; comments and string literals are not source edges.
+
+# Projects whose production sources form the engine module.
+[module-projects]
+delosdb-engine
+delosdb-derby-store-api
+delosdb-storage-derby
+delosdb-storage-mvcc
+
+# group package-prefix; the first matching row decides, * matches the rest.
+[package-groups]
+store-contracts org.apache.derby.iapi.store
+mvcc org.apache.derby.impl.store.access.mvcc
+rawstore-heap org.apache.derby.impl.store
+services org.apache.derby.impl.services
+sql *
+
+# Besides itself and packages outside the engine module, a group may use
+# only these groups.
+[allowed-group-edges]
+rawstore-heap -> store-contracts
+mvcc -> store-contracts
+sql -> store-contracts
+sql -> services
+
+# Single packages a group may use outside its allowed groups.
+[allowed-package-edges]
+services -> org.apache.derby.catalog
+services -> org.apache.derby.iapi.security
+services -> org.apache.derby.iapi.services.jmx
+services -> org.apache.derby.mbeans
