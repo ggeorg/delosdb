@@ -18,7 +18,6 @@ final List<String> runtimeJarNames = [
         'delosdb-spi.jar',
         'osgi-framework-stub.jar',
         'derbyshared.jar',
-        'delosdb-runtime-api.jar',
         'derby.jar',
         'derbytools.jar'
 ]

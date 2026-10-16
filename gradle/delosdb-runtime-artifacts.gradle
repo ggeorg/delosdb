@@ -11,7 +11,6 @@ ext.delosdbRuntimeJarArtifacts = [
         [key: 'spi',         gradleProject: 'delosdb-spi',           jarTask: 'jar',          jarName: 'delosdb-spi.jar'],
         [key: 'osgi',        gradleProject: 'delosdb-osgi-stub',     jarTask: 'jar',   jarName: 'osgi-framework-stub.jar'],
         [key: 'commons',     gradleProject: 'delosdb-commons',       jarTask: 'jar',         jarName: 'derbyshared.jar'],
-        [key: 'runtimeApi',  gradleProject: 'delosdb-runtime-api',   jarTask: 'delosDbRuntimeApiJar',   jarName: 'delosdb-runtime-api.jar'],
         [key: 'engine',      gradleProject: 'delosdb-engine',        jarTask: 'derbyJar',               jarName: 'derby.jar'],
         [key: 'client',      gradleProject: 'delosdb-client',        jarTask: 'jar',         jarName: 'derbyclient.jar'],
         [key: 'tools',       gradleProject: 'delosdb-tools',         jarTask: 'jar',          jarName: 'derbytools.jar'],
@@ -43,7 +42,6 @@ ext.delosdbRuntimeJars = {
 ext.delosdbRuntimeBuildTasks = [
         ':delosdb-osgi-stub:classes',
         ':delosdb-commons:classes',
-        ':delosdb-runtime-api:classes',
         ':delosdb-engine:classes',
         ':delosdb-client:classes',
         ':delosdb-tools:classes',

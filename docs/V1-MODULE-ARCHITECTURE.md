@@ -7,12 +7,11 @@ small amount of deferred structure represented in the checked architecture manif
 
 ## Current module graph
 
-The current build contains 17 Gradle subprojects:
+The current build contains 16 Gradle subprojects:
 
 ```text
 delosdb-osgi-stub
 delosdb-commons
-delosdb-runtime-api
 delosdb-annotations
 delosdb-spi
 delosdb-engine
@@ -38,11 +37,15 @@ delosdb-storage-io
 delosdb-storage-mvcc
 delosdb-storage-derby
 delosdb-derby-store-api
+delosdb-runtime-api
 ```
 
-`delosdb-storage-mvcc`, `delosdb-storage-derby` and `delosdb-derby-store-api` were merged into
-`delosdb-engine`, keeping their packages (`impl.store.access.mvcc`, the rest of `impl.store`, and
-`iapi.store`), by the engine build consolidation in `docs/design/REFERENCE-CODEBASE-STRUCTURE.md`.
+`delosdb-storage-mvcc`, `delosdb-storage-derby`, `delosdb-derby-store-api` and `delosdb-runtime-api`
+were merged into `delosdb-engine`, keeping their packages (`impl.store.access.mvcc`, the rest of
+`impl.store`, `iapi.store`, and the kernel contracts in `org.apache.derby.io`, `iapi.util`,
+`iapi.xml` and `iapi.services.*`), by the engine build consolidation in
+`docs/design/REFERENCE-CODEBASE-STRUCTURE.md`. The engine module exports the kernel contracts as
+Derby's does; the module `io.github.ggeorg.delosdb.runtime.api` no longer exists.
 
 ## Ownership rules
 
@@ -59,18 +62,18 @@ Retired storage modules do not return through build-output or classpath shortcut
 The important current production direction is:
 
 ```text
-delosdb-runtime-api       delosdb-spi
-          \                 /
-           delosdb-engine
-           (SQL; store contracts in iapi.store; RawStore and heap in impl.store;
-            MVCC in impl.store.access.mvcc, found through neutral discovery)
+delosdb-commons    delosdb-annotations    delosdb-spi
+        \                  |                  /
+                     delosdb-engine
+           (kernel contracts and services; SQL; store contracts in iapi.store;
+            RawStore and heap in impl.store; MVCC in impl.store.access.mvcc,
+            found through neutral discovery)
 ```
 
 Representative allowed dependencies are:
 
 ```text
 delosdb-engine
-    -> delosdb-runtime-api
     -> delosdb-spi
     -> delosdb-commons
     -> delosdb-annotations
@@ -104,9 +107,12 @@ gradle/delosdb-runtime-artifacts.gradle
 
 ## Neutral contracts
 
-### `delosdb-runtime-api`
+### Kernel contracts (`delosdb-engine`)
 
-Owns generic runtime and storage contracts that are not specific to heap or MVCC implementation.
+Generic runtime contracts that are not specific to SQL, heap or MVCC: `org.apache.derby.io`,
+`iapi.util`, `iapi.xml` and the `iapi.services.*` contracts (monitor, contexts, locks, cache, and so
+on). The package-boundary check lets every engine group use them and lets them use nothing else in
+the engine.
 
 ### `delosdb-spi`
 

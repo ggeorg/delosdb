@@ -10,6 +10,25 @@ delosdb-engine
 
 # group package-prefix; the first matching row decides, * matches the rest.
 [package-groups]
+kernel-contracts org.apache.derby.io
+kernel-contracts org.apache.derby.iapi.util
+kernel-contracts org.apache.derby.iapi.xml
+kernel-contracts org.apache.derby.iapi.services.cache
+kernel-contracts org.apache.derby.iapi.services.classfile
+kernel-contracts org.apache.derby.iapi.services.compiler
+kernel-contracts org.apache.derby.iapi.services.context
+kernel-contracts org.apache.derby.iapi.services.crypto
+kernel-contracts org.apache.derby.iapi.services.daemon
+kernel-contracts org.apache.derby.iapi.services.diag
+kernel-contracts org.apache.derby.iapi.services.io
+kernel-contracts org.apache.derby.iapi.services.loader
+kernel-contracts org.apache.derby.iapi.services.locks
+kernel-contracts org.apache.derby.iapi.services.memory
+kernel-contracts org.apache.derby.iapi.services.monitor
+kernel-contracts org.apache.derby.iapi.services.property
+kernel-contracts org.apache.derby.iapi.services.security
+kernel-contracts org.apache.derby.iapi.services.timer
+kernel-contracts org.apache.derby.iapi.services.uuid
 store-contracts org.apache.derby.iapi.store
 mvcc org.apache.derby.impl.store.access.mvcc
 rawstore-heap org.apache.derby.impl.store
@@ -17,10 +36,16 @@ services org.apache.derby.impl.services
 sql *
 
 # Besides itself and packages outside the engine module, a group may use
-# only these groups.
+# only these groups. The kernel contracts (formerly delosdb-runtime-api) may
+# use nothing else in the engine.
 [allowed-group-edges]
+store-contracts -> kernel-contracts
+rawstore-heap -> kernel-contracts
 rawstore-heap -> store-contracts
+mvcc -> kernel-contracts
 mvcc -> store-contracts
+services -> kernel-contracts
+sql -> kernel-contracts
 sql -> store-contracts
 sql -> services
 

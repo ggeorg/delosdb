@@ -77,7 +77,6 @@ module org.apache.derby.tools
     // OPTIONAL AT RUN-TIME.
     //
     requires static org.apache.derby.engine;
-    requires static io.github.ggeorg.delosdb.runtime.api;
     requires static org.apache.derby.client;
     requires static java.naming;
 

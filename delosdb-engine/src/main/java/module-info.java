@@ -79,7 +79,6 @@ module org.apache.derby.engine
     requires jdk.jfr;
 
     requires org.apache.derby.commons;
-    requires io.github.ggeorg.delosdb.runtime.api;
     requires io.github.ggeorg.delosdb.annotations;
     requires io.github.ggeorg.delosdb.spi;
 
@@ -138,6 +137,9 @@ module org.apache.derby.engine
     uses org.apache.derby.iapi.store.types.StoreTypeSupport;
     uses org.apache.derby.iapi.services.locks.LockReportSupport;
     uses org.apache.derby.iapi.services.locks.LockFastPathSupport;
+    uses org.apache.derby.iapi.services.monitor.MonitorKernelSupport;
+    uses org.apache.derby.iapi.util.InterruptStatusKernelSupport;
+    uses org.apache.derby.iapi.services.security.StoreSecuritySupport;
     uses org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
 
     provides org.apache.derby.iapi.services.monitor.MonitorKernelSupport
@@ -202,6 +204,8 @@ module org.apache.derby.engine
     //
     exports org.apache.derby.diag;
     exports org.apache.derby.iapi.db;
+    exports org.apache.derby.iapi.services.io;
+    exports org.apache.derby.iapi.services.loader;
     exports org.apache.derby.iapi.sql;
     exports org.apache.derby.iapi.sql.conn;
     exports org.apache.derby.iapi.sql.execute;
@@ -210,6 +214,7 @@ module org.apache.derby.engine
     exports org.apache.derby.impl.sql.execute;
     exports org.apache.derby.impl.load;
     exports org.apache.derby.impl.jdbc;
+    exports org.apache.derby.iapi.util;
 
     //
     // DERBY INTERNAL EXPORTS
@@ -232,6 +237,47 @@ module org.apache.derby.engine
 
     exports org.apache.derby.iapi.services.jmx to
         org.apache.derby.server;
+
+    // Kernel service contracts, exported as Derby exports them.
+    exports org.apache.derby.io to
+        org.apache.derby.optionaltools,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.cache to
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.context to
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.crypto to
+        org.apache.derby.optionaltools,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.daemon to
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.diag to
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.locks to
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.monitor to
+        org.apache.derby.server,
+        org.apache.derby.tools,
+        org.apache.derby.optionaltools,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.property to
+        org.apache.derby.server,
+        org.apache.derby.tests;
+
+    exports org.apache.derby.iapi.services.uuid to
+        org.apache.derby.tests;
+
+    // DelosDB's XML support package, which Derby does not have; ij uses it.
+    exports org.apache.derby.iapi.xml to
+        org.apache.derby.tools;
 
 
     exports org.apache.derby.iapi.sql.compile to

@@ -204,13 +204,13 @@ delosdb-osgi-stub/src/main/java/org/osgi/framework/AdminPermission.java	AdminPer
 delosdb-osgi-stub/src/main/java/org/osgi/framework/AdminPermission.java	AdminPermission	<init>	Throwable	2	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
 delosdb-osgi-stub/src/main/java/org/osgi/framework/FrameworkUtil.java	FrameworkUtil	createFilter	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
 delosdb-osgi-stub/src/main/java/org/osgi/framework/FrameworkUtil.java	FrameworkUtil	createFilter	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
-delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/cache/ClassSize.java	ClassSize	estimateBaseFromCatalog	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
-delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/context/ContextManager.java	ContextManager	cleanupOnError	Throwable	1	REQUIRED_BOUNDARY_CATCH	RUNTIME_SERVICE_BOUNDARY
-delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/diag/DiagnosticUtil.java	DiagnosticUtil	findDiagnostic	Exception	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
-delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/diag/DiagnosticUtil.java	DiagnosticUtil	toDiagString	Throwable	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
-delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/io/DebugByteTeeOutputStream.java	DebugByteTeeOutputStream	checkObject	Throwable	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
-delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java	StorageRandomAccessFile	readFullyAt	IOException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-runtime-api/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java	StorageRandomAccessFile	writeAt	IOException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/iapi/services/cache/ClassSize.java	ClassSize	estimateBaseFromCatalog	Throwable	1	LEGACY_COMPATIBILITY	MODULE_OR_REFLECTION_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/services/context/ContextManager.java	ContextManager	cleanupOnError	Throwable	1	REQUIRED_BOUNDARY_CATCH	RUNTIME_SERVICE_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/iapi/services/diag/DiagnosticUtil.java	DiagnosticUtil	findDiagnostic	Exception	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/services/diag/DiagnosticUtil.java	DiagnosticUtil	toDiagString	Throwable	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/iapi/services/io/DebugByteTeeOutputStream.java	DebugByteTeeOutputStream	checkObject	Throwable	1	LEGACY_COMPATIBILITY	RUNTIME_SERVICE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java	StorageRandomAccessFile	readFullyAt	IOException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/io/StorageRandomAccessFile.java	StorageRandomAccessFile	writeAt	IOException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
 delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	displayCurrentStatus	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
 delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	doGet	Exception	1	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY
 delosdb-server/src/main/java/org/apache/derby/drda/NetServlet.java	NetServlet	doGet	Exception	2	LEGACY_COMPATIBILITY	SERVLET_CONTAINER_COMPATIBILITY

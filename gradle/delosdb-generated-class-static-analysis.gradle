@@ -28,13 +28,13 @@ final Map<String, String> gcTypeNames = [
 
 final Map<String, File> gcInterfaces = [
         'JavaFactory': new File(gcRoot,
-                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/JavaFactory.java'),
+                'delosdb-engine/src/main/java/org/apache/derby/iapi/services/compiler/JavaFactory.java'),
         'ClassBuilder': new File(gcRoot,
-                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/ClassBuilder.java'),
+                'delosdb-engine/src/main/java/org/apache/derby/iapi/services/compiler/ClassBuilder.java'),
         'MethodBuilder': new File(gcRoot,
-                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/MethodBuilder.java'),
+                'delosdb-engine/src/main/java/org/apache/derby/iapi/services/compiler/MethodBuilder.java'),
         'LocalField': new File(gcRoot,
-                'delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/LocalField.java')
+                'delosdb-engine/src/main/java/org/apache/derby/iapi/services/compiler/LocalField.java')
 ]
 
 final Closure<String> gcRelative = { File file ->

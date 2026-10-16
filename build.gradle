@@ -59,7 +59,6 @@ def derbyCompatibilityVersion = '10.17.1.0'
 def moduleNames = [
         osgi         : 'org.osgi.framework',
         commons      : 'org.apache.derby.commons',
-        runtimeApi    : 'io.github.ggeorg.delosdb.runtime.api',
         engine       : 'org.apache.derby.engine',
         client       : 'org.apache.derby.client',
         tools        : 'org.apache.derby.tools',
@@ -71,7 +70,6 @@ def moduleNames = [
 def moduleProjects = [
         (moduleNames.osgi)         : ':delosdb-osgi-stub',
         (moduleNames.commons)      : ':delosdb-commons',
-        (moduleNames.runtimeApi)    : ':delosdb-runtime-api',
         (moduleNames.engine)       : ':delosdb-engine',
         (moduleNames.client)       : ':delosdb-client',
         (moduleNames.tools)        : ':delosdb-tools',
@@ -82,7 +80,6 @@ def moduleProjects = [
 
 def runtimeCompileTasks = [
         ':delosdb-commons:compileDerbyCommons',
-        ':delosdb-runtime-api:compileDelosDbRuntimeApi',
         ':delosdb-engine:compileDerbyEngine',
         ':delosdb-client:compileDerbyClient',
         ':delosdb-tools:compileDerbyTools',
@@ -159,21 +156,19 @@ tasks.register('compileDerbyBuildTools') {
     dependsOn ':delosdb-buildtools:compileDerbyBuildTools'
 }
 
-def runtimeApiClassDir = moduleClassDir(moduleNames.runtimeApi)
 def engineClassDir = moduleClassDir(moduleNames.engine)
 def commonsClassDir = moduleClassDir(moduleNames.commons)
-def classSizeCatalogOutputFile = generatedSourceDir(moduleNames.runtimeApi).map {
+def classSizeCatalogOutputFile = generatedSourceDir(moduleNames.engine).map {
     it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
 }
 def classSizeCrawlerClasspath = files(
         buildToolsClassDir,
         commonsClassDir,
-        runtimeApiClassDir,
         engineClassDir)
 def rootProjectDirectory = layout.projectDirectory.asFile
 
 tasks.register('generateClassSizeCatalog') {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', 'compileDerbyBuildTools'
+    dependsOn ':delosdb-engine:compileDerbyEngine', 'compileDerbyBuildTools'
     inputs.files(classSizeCrawlerClasspath).withPropertyName('classSizeCrawlerClasspath')
     outputs.file(classSizeCatalogOutputFile)
     doLast {
@@ -292,7 +287,6 @@ def moduleDirsForRuntime = files(
         project(':delosdb-spi').layout.buildDirectory.dir('classes/spi'),
         moduleClassDir(moduleNames.osgi),
         moduleClassDir(moduleNames.commons),
-        moduleClassDir(moduleNames.runtimeApi),
         moduleClassDir(moduleNames.engine),
         moduleClassDir(moduleNames.client),
         moduleClassDir(moduleNames.tools),
@@ -300,7 +294,6 @@ def moduleDirsForRuntime = files(
         moduleClassDir(moduleNames.optionaltools),
         moduleClassDir(moduleNames.runner),
         project(':delosdb-commons').layout.buildDirectory.dir('resources/main'),
-        project(':delosdb-runtime-api').layout.buildDirectory.dir('resources/main'),
         project(':delosdb-engine').layout.buildDirectory.dir('resources/main'),
         project(':delosdb-client').layout.buildDirectory.dir('resources/main'),
         project(':delosdb-tools').layout.buildDirectory.dir('resources/main'),
@@ -683,7 +676,6 @@ tasks.register('delosJdk25ClassFileBytecodeVerifier', org.gradle.api.tasks.JavaE
     doFirst {
         def roots = [
                 moduleNames.commons,
-                moduleNames.runtimeApi,
                 moduleNames.engine,
                 moduleNames.client,
                 moduleNames.tools,

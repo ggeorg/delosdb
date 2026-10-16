@@ -23,7 +23,6 @@ dependencies {
     testImplementation project(':delosdb-client')
     testImplementation project(':delosdb-commons')
     testImplementation project(':delosdb-engine')
-    testImplementation project(':delosdb-runtime-api')
     testImplementation project(path: ':delosdb-tests', configuration: 'derbyTestsClasses')
 
     testImplementation rootProject.files('tools/java/junit.jar')

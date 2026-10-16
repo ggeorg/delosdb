@@ -151,11 +151,11 @@ The lock manager now reaches neither SQL nor the store contracts: lock-object na
 
 ## Engine build consolidation (proposed)
 
-Status: implemented 2026-10-15: the package-boundary check and the `storage-mvcc`, `storage-derby` and `derby-store-api` merges. The `runtime-api` review remains.
+Status: implemented 2026-10-15: the package-boundary check and the `storage-mvcc`, `storage-derby`, `derby-store-api` and `runtime-api` merges.
 
 **Why.** Derby 10.17.1.0 compiles SQL, transactions, locks, access methods and RawStore together into one JPMS module, `org.apache.derby.engine`. DelosDB keeps `derby-store-api`, `storage-derby` and `storage-mvcc` as separate Gradle projects and then patches their classes into that same module: `derby-store-api` through `enginePatch`, the two storage projects through `derbyRuntimePatchElements`, all passed to `--patch-module` when the engine compiles. JPMS cannot isolate packages inside one module, so these projects add build concepts (patch configurations, per-project class directories, test-support patch lists) without runtime isolation. What they do give is compile-time enforcement: each storage project compiles only against `commons`, `runtime-api`, `annotations` and `derby-store-api`.
 
-**Target.** One engine Gradle project, matching the one engine module, with ownership expressed by packages and enforced by an executable package-boundary check. Projects that are real deployment or JPMS boundaries stay: `commons`, `client`, `server`, `tools`, `runner`, `optionaltools`, `spi`, `annotations`. `runtime-api` is a real JPMS module (`io.github.ggeorg.delosdb.runtime.api`); whether it stays separate is decided after its consumers are listed, not as part of this consolidation.
+**Target.** One engine Gradle project, matching the one engine module, with ownership expressed by packages and enforced by an executable package-boundary check. Projects that are real deployment or JPMS boundaries stay: `commons`, `client`, `server`, `tools`, `runner`, `optionaltools`, `spi`, `annotations`. `runtime-api` was a real JPMS module (`io.github.ggeorg.delosdb.runtime.api`); after its review below it was merged too.
 
 **Projects merged into the engine project.**
 
@@ -169,13 +169,14 @@ Source files move with `git mv` to the same package paths under `delosdb-engine/
 
 **Package-boundary check (first, before any move).** The check replaces what the Gradle projects enforce today, and it runs on the current tree first, where it must pass by construction. It extends the existing `delosModuleDependencyBoundaryStaticAnalysis` audit with a checked manifest of package groups and allowed imports:
 
-| Group | Packages | May import, besides `commons`, `runtime-api`, `annotations` and the JDK |
+| Group | Packages | May import, besides `commons`, `annotations`, `spi` and the JDK |
 |---|---|---|
-| store contracts | `iapi.store.**` (today's `derby-store-api`) | nothing else in the engine |
-| RawStore and heap | `impl.store.**` except `impl.store.access.mvcc`: RawStore, log, transactions, replication, and the heap, B-tree, sort and conglomerate access packages (today's `storage-derby`) | store contracts |
-| MVCC | `impl.store.access.mvcc` | store contracts |
-| services | `impl.services.**` | the engine-owned packages listed in the step 4 evidence (`catalog.UUID`, `iapi.security`, `iapi.services.jmx`, `mbeans`) until each is resolved |
-| SQL and the rest of the engine | everything else | store contracts, services; never RawStore, heap or MVCC implementation |
+| kernel contracts | `org.apache.derby.io`, `iapi.util`, `iapi.xml` and 16 `iapi.services` packages (formerly `runtime-api`) | nothing else in the engine |
+| store contracts | `iapi.store.**` (today's `derby-store-api`) | kernel contracts |
+| RawStore and heap | `impl.store.**` except `impl.store.access.mvcc`: RawStore, log, transactions, replication, and the heap, B-tree, sort and conglomerate access packages (today's `storage-derby`) | kernel contracts, store contracts |
+| MVCC | `impl.store.access.mvcc` | kernel contracts, store contracts |
+| services | `impl.services.**` | kernel contracts, and the engine-owned packages listed in the step 4 evidence (`catalog.UUID`, `iapi.security`, `iapi.services.jmx`, `mbeans`) until each is resolved |
+| SQL and the rest of the engine | everything else | kernel contracts, store contracts, services; never RawStore, heap or MVCC implementation |
 
 The current forbidden project edges (engine → MVCC, MVCC → engine implementation, `storage-derby` → MVCC) become forbidden group edges. The rows are derived from today's project dependencies and from the measured imports; the check, not this table, is the authority.
 
@@ -191,7 +192,7 @@ The current forbidden project edges (engine → MVCC, MVCC → engine implementa
 3. Merge `storage-derby`. Done, with the same byte-identical `derby.jar` result; its one unit test, `AccessMethodTransactionLifecycleTest`, now runs from the engine project's tests.
 4. Merge `derby-store-api`. Done: `derby.jar`, `derbynet.jar`, `derbyoptionaltools.jar` and `derbytools.jar` are byte-identical apart from the message timestamps; `server` and `optionaltools` no longer patch the engine module when they compile. It went last: the engine's `module-info` provides heap and MVCC classes, so the engine compiles with the storage classes patched in, and those compile against `derby-store-api`. Moving it into the engine first would make each storage project and the engine need the other to compile.
 5. Update the module documents and the target manifest. Done with each merge.
-6. Then list `runtime-api`'s consumers and decide whether it stays a separate module.
+6. List `runtime-api`'s consumers and decide whether it stays a separate module. Done: reviewed below and merged into the engine.
 
 ### `runtime-api` review (2026-10-15)
 
@@ -201,6 +202,8 @@ The current forbidden project edges (engine → MVCC, MVCC → engine implementa
 - **Derby keeps all of these packages in `org.apache.derby.engine`.** It exports `iapi.services.io`, `iapi.services.loader` and `iapi.util` to everyone, `iapi.services.monitor` only to server, tools, optionaltools and tests, and `org.apache.derby.io` only to optionaltools and tests; the rest are not exported.
 - **DelosDB exports all 21 packages to every module**, a wider surface than Derby: module-path code can reach the monitor, contexts, lock and cache contracts.
 - **`derby.jar` does not contain these classes.** The engine module `requires` `runtime.api`, `annotations` and `spi`, so a Derby-compatible deployment needs `delosdb-runtime-api.jar` (and those two jars) besides `derby.jar` and `derbyshared.jar`, where Derby's `derby.jar` needs only `derbyshared.jar`.
+
+Decision (2026-10-15): merged as recommended. `derby.jar` now holds its 1,798 previous entries plus the 144 `runtime-api` classes, byte-identical; only the `module-info` classes of `derby.jar`, `derbynet.jar`, `derbyoptionaltools.jar`, `derbyshared.jar` and `derbytools.jar` changed. The engine exports the kernel contracts with Derby's set, plus `iapi.xml` to `tools`, a DelosDB package Derby does not have; the tests reach `iapi.services.classfile` and `iapi.services.compiler` through test-only `--add-exports`. The package-boundary manifest gained a kernel-contracts group so the merged packages keep their former isolation.
 
 Recommendation: merge `runtime-api` into the engine project and module, as Derby has it, with Derby's export set for the inherited packages and DelosDB's own contracts unexported. `derby.jar` then carries its kernel contracts again, the public module surface shrinks to Derby's, and one module concept goes. Costs: the module name `io.github.ggeorg.delosdb.runtime.api` disappears (only `server`, `tools` and `optionaltools` require it, and `commons` exports six packages to it); the generated `ClassSizeCatalogImpl` moves to the engine; `buildtools` and `storeless` compile against engine classes; module-path code that used the wider exports loses them, which matches Derby. Whether `annotations` and `spi` should stay separate runtime jars is a separate question: `spi` is a supported public extension API.
 

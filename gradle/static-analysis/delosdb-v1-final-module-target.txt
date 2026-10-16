@@ -4,7 +4,6 @@
 [target-modules]
 delosdb-osgi-stub
 delosdb-commons
-delosdb-runtime-api
 delosdb-annotations
 delosdb-spi
 delosdb-search-lucene
@@ -31,6 +30,7 @@ delosdb-storage-bridge
 delosdb-storage-mvcc
 delosdb-storage-derby
 delosdb-derby-store-api
+delosdb-runtime-api
 
 [retired-artifacts]
 delosdb-storage-api.jar
@@ -39,6 +39,7 @@ delosdb-storage-bridge.jar
 delosdb-storage-mvcc.jar
 delosdb-storage-derby.jar
 delosdb-derby-store-api.jar
+delosdb-runtime-api.jar
 
 [required-provider-artifacts]
 delosdb-search-lucene.jar

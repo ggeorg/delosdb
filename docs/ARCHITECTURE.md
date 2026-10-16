@@ -112,9 +112,8 @@ Core production ownership is separated as follows:
 | Module | Responsibility |
 |---|---|
 | `delosdb-commons` | shared compatibility and utility contracts |
-| `delosdb-runtime-api` | neutral runtime-facing APIs |
 | `delosdb-spi` | provider-neutral external-index contracts |
-| `delosdb-engine` | SQL, catalogs, execution, embedded JDBC; storage/access-method contracts in `iapi.store`; inherited heap and RawStore in `impl.store`; MVCC provider and semantics in `impl.store.access.mvcc` |
+| `delosdb-engine` | kernel contracts and services; SQL, catalogs, execution, embedded JDBC; storage/access-method contracts in `iapi.store`; inherited heap and RawStore in `impl.store`; MVCC provider and semantics in `impl.store.access.mvcc` |
 | `delosdb-client` | DRDA client |
 | `delosdb-server` | DRDA server |
 

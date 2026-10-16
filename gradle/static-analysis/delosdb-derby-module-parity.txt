@@ -24,7 +24,6 @@ DERBY-MOD-011|KEEP_DERBY_PEER|java/stubs|:delosdb-osgi-stub|stub module|Inherite
 DERBY-MOD-012|KEEP_DERBY_PEER|java/locales|:delosdb-locales|locale verification module|Localization resources remain separately verified.
 DERBY-MOD-013|KEEP_DERBY_PEER|java/demo|:delosdb-demos|demo module|Demos remain non-core and separately owned.
 DERBY-MOD-014|KEEP_DERBY_PEER|java/build|:delosdb-buildtools|build helper module|Build helper code remains separated from runtime artifacts.
-DERBY-MOD-015|DELOSDB_EXTENSION|none|:delosdb-runtime-api|runtime seam|DelosDB split for runtime-format and storage-provider integration seams.
 DERBY-MOD-016|DELOSDB_EXTENSION|none|:delosdb-annotations|annotation seam|DelosDB-owned annotations used by extension APIs.
 DERBY-MOD-017|DELOSDB_EXTENSION|none|:delosdb-spi|extension SPI|DelosDB-owned experimental SPI surface.
 DERBY-MOD-022|DELOSDB_EXTENSION|none|:delosdb-engine|RawStore MVCC access method|DelosDB-owned MVCC semantics and Derby access-method provider integration, in the engine package impl.store.access.mvcc.

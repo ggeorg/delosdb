@@ -38,7 +38,6 @@ java {
 
 dependencies {
     implementation project(':delosdb-commons')
-    compileOnly project(':delosdb-runtime-api')
     compileOnly project(':delosdb-client')
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
 }

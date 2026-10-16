@@ -1,6 +1,6 @@
 # DelosDB generated-class architecture manifest
 # Format: id|category|path|marker|reason
-GCA-001|CONTRACT|delosdb-runtime-api/src/main/java/org/apache/derby/iapi/services/compiler/JavaFactory.java|interface JavaFactory|The existing JavaFactory, ClassBuilder, MethodBuilder, and LocalField interfaces remain the only compiler-facing generation boundary.
+GCA-001|CONTRACT|delosdb-engine/src/main/java/org/apache/derby/iapi/services/compiler/JavaFactory.java|interface JavaFactory|The existing JavaFactory, ClassBuilder, MethodBuilder, and LocalField interfaces remain the only compiler-facing generation boundary.
 GCA-002|CONTRACT|gradle/static-analysis/delosdb-methodbuilder-operation-inventory.txt|MB-043|The complete MethodBuilder surface remains frozen at 43 signatures and 32 distinct operation names.
 GCA-003|CONTRACT|gradle/static-analysis/delosdb-methodbuilder-behavior-fixtures.txt|MBF-043|Every MethodBuilder signature remains mapped to one of ten executable behavior groups.
 GCA-004|BACKEND|delosdb-engine/src/main/java/org/apache/derby/impl/services/bytecode/classfile/ClassFileJava.java|implements JavaFactory|ClassFileJava is the sole production implementation of the inherited generated-class contract.

@@ -8,7 +8,7 @@ version = rootProject.version
 group = rootProject.group
 
 // Small neutral module for DelosDB stability/visibility annotations.
-// This intentionally prevents runtime-api from depending on the broad SPI module.
+// This intentionally keeps the engine's annotations separate from the broad SPI module.
 def moduleName = 'io.github.ggeorg.delosdb.annotations'
 def moduleClassDir = layout.buildDirectory.dir("classes/modules/${moduleName}")
 
