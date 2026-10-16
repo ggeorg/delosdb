@@ -3,7 +3,6 @@ plugins {
 }
 
 import org.gradle.api.tasks.compile.JavaCompile
-import org.gradle.api.file.ArchiveOperations
 import org.gradle.api.file.FileSystemOperations
 import javax.inject.Inject
 import java.nio.file.Files
@@ -13,9 +12,6 @@ import java.util.zip.ZipFile
 abstract class DelosDbEngineBuildServices {
     @Inject
     abstract FileSystemOperations getFileSystemOperations()
-
-    @Inject
-    abstract ArchiveOperations getArchiveOperations()
 }
 
 version = rootProject.version
@@ -33,11 +29,6 @@ java {
 }
 
 configurations {
-    enginePatch {
-        canBeConsumed = false
-        canBeResolved = true
-        transitive = false
-    }
     derbyEngineClasses {
         canBeConsumed = true
         canBeResolved = false
@@ -51,15 +42,7 @@ dependencies {
     implementation project(':delosdb-spi')
     // ClassFileJava uses java.lang.classfile from java.base; no external bytecode library.
     compileOnly project(':delosdb-osgi-stub')
-
-    enginePatch project(':delosdb-derby-store-api')
-
-    // Unit tests run on the class path against the compiled engine module and
-    // the store contracts it is patched with.
-    testImplementation project(':delosdb-derby-store-api')
 }
-
-def enginePatchFiles = objects.fileCollection().from(configurations.enginePatch)
 
 sourceSets {
     main {
@@ -121,17 +104,12 @@ def generatedOdbcResourceDir = layout.buildDirectory.dir('generated/resources/od
 
 tasks.named('compileJava', JavaCompile) {
     dependsOn tasks.named('generateSqlParser')
-    inputs.files(enginePatchFiles).withPropertyName('enginePatch')
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
     options.deprecation = false
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
-    doFirst {
-        options.compilerArgs.addAll(['--patch-module',
-                "${moduleName}=${enginePatchFiles.asPath}"])
-    }
 }
 
 tasks.named('processResources') {
@@ -215,26 +193,15 @@ tasks.named('jar', Jar) {
 }
 
 // Compatibility runtime jar used by the root `jars` task. It remains the full
-// Derby-compatible derby.jar, including patched store classes and generated
-// Derby runtime resources.
+// Derby-compatible derby.jar, including the store classes and generated Derby
+// runtime resources.
 tasks.register('derbyJar', Jar) {
-    dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileClassSizeCatalog'),
-            ':delosdb-derby-store-api:compileDerbyStoreApi'
+    dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileClassSizeCatalog')
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from moduleClassDir
     from sourceSets.main.output.resourcesDir
-    from({
-        enginePatchFiles.collect {
-            it.isDirectory() ? it : engineBuildServices.archiveOperations.zipTree(it)
-        }
-    }) {
-        include 'org/apache/derby/iapi/store/types/**'
-        include 'org/apache/derby/iapi/store/**'
-        exclude 'META-INF/MANIFEST.MF'
-        exclude 'module-info.class'
-    }
     from(rootProject.ext.delosdbLegalFiles) {
         into 'META-INF'
     }

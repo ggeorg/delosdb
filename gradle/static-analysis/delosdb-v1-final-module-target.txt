@@ -7,7 +7,6 @@ delosdb-commons
 delosdb-runtime-api
 delosdb-annotations
 delosdb-spi
-delosdb-derby-store-api
 delosdb-search-lucene
 delosdb-engine
 delosdb-client
@@ -31,6 +30,7 @@ delosdb-storage-io
 delosdb-storage-bridge
 delosdb-storage-mvcc
 delosdb-storage-derby
+delosdb-derby-store-api
 
 [retired-artifacts]
 delosdb-storage-api.jar
@@ -38,6 +38,7 @@ delosdb-storage-io.jar
 delosdb-storage-bridge.jar
 delosdb-storage-mvcc.jar
 delosdb-storage-derby.jar
+delosdb-derby-store-api.jar
 
 [required-provider-artifacts]
 delosdb-search-lucene.jar

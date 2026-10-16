@@ -20,13 +20,6 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-configurations {
-    enginePatchModule {
-        canBeResolved = true
-        canBeConsumed = false
-    }
-}
-
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-tools')
@@ -34,11 +27,9 @@ dependencies {
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly servletModulePath
 
-    enginePatchModule(project(':delosdb-derby-store-api')) { transitive = false }
 }
 
 def compileModulePathFiles = objects.fileCollection().from(configurations.compileClasspath)
-def enginePatchModuleFiles = objects.fileCollection().from(configurations.enginePatchModule)
 
 sourceSets {
     main {
@@ -51,7 +42,6 @@ sourceSets {
 
 tasks.named('compileJava', JavaCompile) {
     inputs.files(compileModulePathFiles).withPropertyName('compileModulePath')
-    inputs.files(enginePatchModuleFiles).withPropertyName('enginePatchModule')
     destinationDirectory.set(moduleClassDir)
     modularity.inferModulePath = false
     classpath = files()
@@ -62,7 +52,6 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
         options.compilerArgs.addAll(['--module-path', compileModulePathFiles.asPath])
-        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${enginePatchModuleFiles.asPath}"])
     }
 }
 

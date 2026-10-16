@@ -1,4 +1,4 @@
 # DelosDB scoped storage/MVCC static-analysis baseline.
 # Format: RULE|relative/path.java|normalized executable source line
 # Comments and documentation are intentionally excluded from gate authority.
-STORAGE_UNSUPPORTED_OPERATION|delosdb-derby-store-api/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueBase.java|throw new UnsupportedOperationException(getClass().getName());
+STORAGE_UNSUPPORTED_OPERATION|delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueBase.java|throw new UnsupportedOperationException(getClass().getName());

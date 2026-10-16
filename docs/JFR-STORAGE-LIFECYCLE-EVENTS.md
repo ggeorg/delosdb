@@ -24,6 +24,6 @@ and stable observability contract are retained.
 ```bash
 ./gradlew \
   delosJfrStorageLifecycleEventsStaticAnalysis \
-  :delosdb-derby-store-api:check \
+  :delosdb-engine:check \
   --console=plain
 ```

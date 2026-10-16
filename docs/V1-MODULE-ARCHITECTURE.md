@@ -7,7 +7,7 @@ small amount of deferred structure represented in the checked architecture manif
 
 ## Current module graph
 
-The current build contains 18 Gradle subprojects:
+The current build contains 17 Gradle subprojects:
 
 ```text
 delosdb-osgi-stub
@@ -15,7 +15,6 @@ delosdb-commons
 delosdb-runtime-api
 delosdb-annotations
 delosdb-spi
-delosdb-derby-store-api
 delosdb-engine
 delosdb-client
 delosdb-tools
@@ -38,11 +37,12 @@ delosdb-storage-bridge
 delosdb-storage-io
 delosdb-storage-mvcc
 delosdb-storage-derby
+delosdb-derby-store-api
 ```
 
-`delosdb-storage-mvcc` and `delosdb-storage-derby` were merged into `delosdb-engine`, keeping their
-packages (`impl.store.access.mvcc`, and the rest of `impl.store`), as part of the engine build
-consolidation in `docs/design/REFERENCE-CODEBASE-STRUCTURE.md`.
+`delosdb-storage-mvcc`, `delosdb-storage-derby` and `delosdb-derby-store-api` were merged into
+`delosdb-engine`, keeping their packages (`impl.store.access.mvcc`, the rest of `impl.store`, and
+`iapi.store`), by the engine build consolidation in `docs/design/REFERENCE-CODEBASE-STRUCTURE.md`.
 
 ## Ownership rules
 
@@ -61,10 +61,8 @@ The important current production direction is:
 ```text
 delosdb-runtime-api       delosdb-spi
           \                 /
-           delosdb-derby-store-api
-                 |
            delosdb-engine
-           (SQL; RawStore and heap in impl.store;
+           (SQL; store contracts in iapi.store; RawStore and heap in impl.store;
             MVCC in impl.store.access.mvcc, found through neutral discovery)
 ```
 
@@ -73,7 +71,6 @@ Representative allowed dependencies are:
 ```text
 delosdb-engine
     -> delosdb-runtime-api
-    -> delosdb-derby-store-api
     -> delosdb-spi
     -> delosdb-commons
     -> delosdb-annotations
@@ -96,10 +93,8 @@ org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider
 
 It ships in `derby.jar` with its provider registration; the separate `delosdb-storage-mvcc.jar` is
 retired. Discovery through `ExternalAccessMethodProvider` remains for optional providers such as the
-deferred `delosdb-search-lucene`.
-
-`delosdb-derby-store-api.jar` is likewise an assembled support artifact rather than a normal runtime
-jar.
+deferred `delosdb-search-lucene`. The store contracts are in `derby.jar` too; no separate store
+jar is assembled.
 
 The authoritative artifact model lives in:
 
@@ -118,10 +113,12 @@ Owns generic runtime and storage contracts that are not specific to heap or MVCC
 Owns provider-neutral extension contracts. Implementation-specific MVCC classes do not appear in
 these APIs.
 
-### `delosdb-derby-store-api`
+### Store contracts (`delosdb-engine`, `iapi.store`)
 
-Owns the narrow shared contracts between Derby access/transaction code, RawStore implementation, and
-external access-method providers.
+The narrow shared contracts between Derby access/transaction code, the RawStore implementation, and
+access-method providers. They are a source-ownership boundary, not a public DelosDB storage API: the
+package-boundary check lets them use nothing else in the engine, and `delosdb-storeless` implements
+them as a no-op store.
 
 ### RawStore and heap (`delosdb-engine`, `impl.store` except `access.mvcc`)
 

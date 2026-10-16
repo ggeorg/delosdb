@@ -162,7 +162,6 @@ tasks.register('compileDerbyBuildTools') {
 def runtimeApiClassDir = moduleClassDir(moduleNames.runtimeApi)
 def engineClassDir = moduleClassDir(moduleNames.engine)
 def commonsClassDir = moduleClassDir(moduleNames.commons)
-def derbyStoreApiClassDir = project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
 def classSizeCatalogOutputFile = generatedSourceDir(moduleNames.runtimeApi).map {
     it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
 }
@@ -170,12 +169,11 @@ def classSizeCrawlerClasspath = files(
         buildToolsClassDir,
         commonsClassDir,
         runtimeApiClassDir,
-        engineClassDir,
-        derbyStoreApiClassDir)
+        engineClassDir)
 def rootProjectDirectory = layout.projectDirectory.asFile
 
 tasks.register('generateClassSizeCatalog') {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-derby-store-api:compileDerbyStoreApi', 'compileDerbyBuildTools'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', 'compileDerbyBuildTools'
     inputs.files(classSizeCrawlerClasspath).withPropertyName('classSizeCrawlerClasspath')
     outputs.file(classSizeCatalogOutputFile)
     doLast {

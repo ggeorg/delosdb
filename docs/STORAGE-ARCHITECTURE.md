@@ -48,7 +48,7 @@ The current integration path is:
 ```text
 Derby statement and result-set execution
     -> MVCC conglomerate and scan/controller integration
-    -> delosdb-derby-store-api
+    -> the store contracts (iapi.store)
     -> MvccRawStore* access-method implementation
     -> Derby RawStore containers, pages, logging, recovery, and backup
 ```

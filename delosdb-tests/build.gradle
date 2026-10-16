@@ -350,7 +350,6 @@ dependencies {
 
     testImplementation project(':delosdb-client')
     testImplementation project(':delosdb-commons')
-    testImplementation project(':delosdb-derby-store-api')
     testImplementation project(':delosdb-engine')
     testImplementation project(':delosdb-runtime-api')
     testImplementation project(':delosdb-optionaltools')

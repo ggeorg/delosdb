@@ -20,14 +20,10 @@ ext.delosdbRuntimeJarArtifacts = [
         [key: 'runner',      gradleProject: 'delosdb-runner',        jarTask: 'jar',            jarName: 'derbyrun.jar']
 ]
 
-// These jars are assembled but are not placed directly on the current
-// Derby-compatible runtime classpath. derby-store-api is patched into
-// derby.jar. The MVCC access method is part of derby.jar; its separate
-// provider jar is retired. No retained Phase 8 implementation remains in the
-// active source tree.
-ext.delosdbAssembledSupportJarArtifacts = [
-        [key: 'storeApi',    gradleProject: 'delosdb-derby-store-api', jarTask: 'jar', jarName: 'delosdb-derby-store-api.jar']
-]
+// Jars that are assembled but not placed on the Derby-compatible runtime
+// classpath. None remain: the store contracts, RawStore, heap and MVCC are all
+// part of derby.jar, and their separate jars are retired.
+ext.delosdbAssembledSupportJarArtifacts = []
 
 ext.delosdbAssembledJarArtifacts = ext.delosdbRuntimeJarArtifacts + ext.delosdbAssembledSupportJarArtifacts
 ext.delosdbRuntimeJarNames = ext.delosdbRuntimeJarArtifacts.collect { it.jarName }

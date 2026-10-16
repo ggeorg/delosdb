@@ -202,7 +202,7 @@ performance/baseline capture are explicit lanes rather than hidden `check` depen
 ## Storage verification
 
 ```bash
-./gradlew   :delosdb-derby-store-api:check   :delosdb-engine:check   :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests   --console=plain
+./gradlew   :delosdb-engine:check   :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests   --console=plain
 ```
 
 ## Baseline evidence capture

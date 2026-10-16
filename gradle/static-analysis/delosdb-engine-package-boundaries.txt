@@ -7,7 +7,6 @@
 # Projects whose production sources form the engine module.
 [module-projects]
 delosdb-engine
-delosdb-derby-store-api
 
 # group package-prefix; the first matching row decides, * matches the rest.
 [package-groups]

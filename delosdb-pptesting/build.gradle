@@ -24,9 +24,6 @@ dependencies {
     testImplementation project(':delosdb-commons')
     testImplementation project(':delosdb-engine')
     testImplementation project(':delosdb-runtime-api')
-    // Required by StringDataValue's inherited Store* interfaces used by UTF8ReaderTest.
-    // Source-import analysis cannot see this classfile-signature dependency.
-    testImplementation project(':delosdb-derby-store-api')
     testImplementation project(path: ':delosdb-tests', configuration: 'derbyTestsClasses')
 
     testImplementation rootProject.files('tools/java/junit.jar')

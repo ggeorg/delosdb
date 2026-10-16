@@ -24,14 +24,6 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-configurations {
-    enginePatchModule {
-        canBeResolved = true
-        canBeConsumed = false
-        transitive = false
-    }
-}
-
 dependencies {
     implementation project(':delosdb-commons')
     implementation project(':delosdb-tools')
@@ -39,15 +31,9 @@ dependencies {
     compileOnly project(path: ':delosdb-engine', configuration: 'derbyEngineClasses')
     compileOnly externalModulePath
 
-    // Optional dump tools compile against inherited Derby raw-store contracts
-    // and implementation helpers, which are in the engine's classes.
-    // DataValueDescriptor's inherited Store* interfaces are owned by
-    // delosdb-derby-store-api, which is a patch-module input.
-    enginePatchModule project(':delosdb-derby-store-api')
 }
 
 def compileModulePathFiles = objects.fileCollection().from(configurations.compileClasspath)
-def enginePatchModuleFiles = objects.fileCollection().from(configurations.enginePatchModule)
 
 sourceSets {
     main {
@@ -60,7 +46,6 @@ sourceSets {
 
 tasks.named('compileJava', JavaCompile) {
     inputs.files(compileModulePathFiles).withPropertyName('compileModulePath')
-    inputs.files(enginePatchModuleFiles).withPropertyName('enginePatchModule')
     destinationDirectory.set(moduleClassDir)
     modularity.inferModulePath = false
     classpath = files()
@@ -71,7 +56,6 @@ tasks.named('compileJava', JavaCompile) {
     options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
         options.compilerArgs.addAll(['--module-path', compileModulePathFiles.asPath])
-        options.compilerArgs.addAll(['--patch-module', "org.apache.derby.engine=${enginePatchModuleFiles.asPath}"])
         // DataFileVTI is an inherited Derby optional dump tool. It reads raw data
         // helpers from the storage implementation patched into the engine module
         // for this compile, without making delosdb-engine export all store internals.
