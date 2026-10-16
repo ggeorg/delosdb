@@ -406,7 +406,9 @@ final class MvccRawStoreVersionReader implements AutoCloseable {
 
     // Snapshots are contiguous published commit-sequence frontiers. A foreign
     // uncommitted version is rejected below, and a precommit-stamped version
-    // cannot enter a snapshot until its sequence is published.
+    // cannot enter a snapshot until its sequence is published. Version records
+    // never rely on the transaction-status table; see
+    // MvccRawStoreTransactionContext.committedBeginSequence.
     static boolean visible(
             MvccRawStoreTable.VersionRecord version,
             long transactionId,

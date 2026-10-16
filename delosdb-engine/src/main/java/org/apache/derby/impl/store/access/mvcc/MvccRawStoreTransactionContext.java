@@ -448,20 +448,27 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return runtime.isTransactionActive(candidateTransactionId);
     }
 
+    // A Gen2 CURRENT head has no end sequence: it is visible from the commit
+    // of its begin until it is replaced. History versions, which carry an end,
+    // are read by MvccRawStoreVersionReader.visible.
     boolean currentVisibleTo(
             long creatorTransactionId,
             long beginSequence,
             long snapshotSequence) throws StandardException {
-        if (beginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
-            if (creatorTransactionId != 0L && creatorTransactionId == transactionId) {
-                return true;
-            }
-            long committedSequence = runtime.transactionStatuses.committedSequence(rawTransaction, creatorTransactionId);
-            return committedSequence > 0L && committedSequence <= snapshotSequence;
+        if (beginSequence == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE
+                && creatorTransactionId != 0L
+                && creatorTransactionId == transactionId) {
+            return true;
         }
-        return beginSequence > 0L && beginSequence <= snapshotSequence;
+        long committedSequence = committedBeginSequence(creatorTransactionId, beginSequence);
+        return committedSequence > 0L && committedSequence <= snapshotSequence;
     }
 
+    // A fresh inline insert batch may commit through the transaction-status
+    // table without restamping its CURRENT heads, so their begin stays
+    // UNCOMMITTED_SEQUENCE and the creator's status gives the commit sequence.
+    // Archiving such a head into history resolves its begin here first, so
+    // every version record has a stamped begin.
     long committedBeginSequence(long creatorTransactionId, long beginSequence) throws StandardException {
         if (beginSequence != MvccRawStoreFormat.UNCOMMITTED_SEQUENCE) {
             return beginSequence;
