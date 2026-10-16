@@ -59,6 +59,18 @@ necessary visible predecessor at the oldest retained horizon, and removes obsole
 a logged RawStore transaction. Tombstone reclamation and derived-index rebuild follow the same horizon
 and transaction authority.
 
+## In-place compress
+
+`SYSCS_UTIL.SYSCS_INPLACE_COMPRESS_TABLE` accepts `delos_mvcc` tables with Derby's three options:
+
+- **purge** vacuums the table's versions to the horizon, then purges the deleted index entries that no
+  snapshot needs (see `MVCC-SECONDARY-INDEX-VISIBILITY.md`, stage 2);
+- **defragment** is skipped: it moves heap rows to earlier pages and rewrites their index entries,
+  while an MVCC row keeps its logical row id wherever its versions are stored;
+- **truncate** vacuums again and returns the free pages at the end of each index.
+
+Full compress (`SYSCS_COMPRESS_TABLE`) and `TRUNCATE TABLE` are not supported for `delos_mvcc` tables.
+
 ## Shutdown and diagnostics
 
 Shutdown stops periodic scans, rejects new work, interrupts and joins the worker,
@@ -71,5 +83,6 @@ registered-table and active-worker state.
 ```text
 :delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreMaintenanceDiagnosticsTest'
 :delosdb-tests:delosFunctionalTests --tests '*MvccRawStoreVacuumTest'
+:delosdb-tests:delosFunctionalTests --tests '*MvccInplaceCompressTest'
 :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
 ```

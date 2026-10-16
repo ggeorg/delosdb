@@ -345,7 +345,12 @@ class AlterTableConstantAction extends DDLSingleTableConstantAction
 	            if (purge)
 	                purgeRows(tc);
 
-	            if (defragment)
+	            // Defragment moves heap rows to earlier pages and rewrites
+	            // their index entries. A delos_mvcc row keeps its logical row
+	            // id wherever its versions are stored, and purge already
+	            // vacuums its storage, so there is nothing to defragment.
+	            if (defragment
+	                    && !DelosStorageProviderIds.isMvcc(td.getStorageProviderName()))
                     defragmentRows(tc);
 
 	            if (truncateEndOfTable)
