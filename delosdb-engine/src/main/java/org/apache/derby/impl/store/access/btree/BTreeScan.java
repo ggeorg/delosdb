@@ -1331,7 +1331,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
         BTree conglomerate = getConglomerate();
         LeafReadSnapshotHit hit =
-                conglomerate.searchLeafReadSnapshot(init_startKeyValue);
+                BTreeSnapshotSearch.exact(conglomerate, init_startKeyValue);
         if (hit == null) {
             BTreePointReadDiagnostics.increment(
                     BTreePointReadDiagnostics.SNAPSHOT_POINT_SNAPSHOT_MISSES);
@@ -1435,9 +1435,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         if (scan_state != SCAN_INIT || !isSnapshotPrefixReadShape()) {
             return -1;
         }
-        LeafReadSnapshotPrefixHit hit = getConglomerate()
-                .searchPrefixLeafReadSnapshot(
-                        this, init_startKeyValue, !checksVisibility());
+        LeafReadSnapshotPrefixHit hit = BTreeSnapshotSearch.prefix(
+                getConglomerate(), this, init_startKeyValue, !checksVisibility());
         if (hit == null) {
             return -1;
         }

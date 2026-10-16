@@ -221,17 +221,17 @@ public abstract class BTree extends GenericConglomerate
      * root path. Snapshot construction and refresh still occur under the
      * exclusive root latch.</p>
      */
-    private transient volatile RootRoutingSnapshot rootRoutingSnapshot;
+    transient volatile RootRoutingSnapshot rootRoutingSnapshot;
 
     /**
      * Immutable decoded rows for stable leaf pages used by exact-key reads.
      * RawStore pages remain authoritative: a page mutation invalidates its
      * snapshot through the page auxiliary-object hook before any bytes change.
      */
-    private transient volatile ConcurrentHashMap<Long, LeafReadSnapshot> leafReadSnapshots;
+    transient volatile ConcurrentHashMap<Long, LeafReadSnapshot> leafReadSnapshots;
 
     /** Immutable routing snapshots for stable level-1 branch pages. */
-    private transient volatile BTreeBranchRoutingSnapshots branchRoutingSnapshots;
+    transient volatile BTreeBranchRoutingSnapshots branchRoutingSnapshots;
 
     final long searchRootRoutingSnapshot(
             BranchControlRow root, OpenBTree openBtree, SearchParameters params)
@@ -320,102 +320,6 @@ public abstract class BTree extends GenericConglomerate
         leaf.observeLeafReadSnapshot(this);
     }
 
-    final LeafReadSnapshotHit searchLeafReadSnapshot(StoreDataValue[] searchKey)
-            throws StandardException {
-        RootRoutingSnapshot root = rootRoutingSnapshot;
-        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
-        if (root == null || root.rootLevel != 1 || snapshots == null) {
-            return null;
-        }
-
-        long leafPageNumber = root.route(
-                searchKey, SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH, this);
-        if (rootRoutingSnapshot != root) {
-            return null;
-        }
-        LeafReadSnapshot leaf = snapshots.get(leafPageNumber);
-        if (leaf == null) {
-            return null;
-        }
-        StoreDataValue[] row = leaf.searchExact(searchKey, this);
-        if (row == null || rootRoutingSnapshot != root
-                || snapshots.get(leafPageNumber) != leaf) {
-            return null;
-        }
-        return new LeafReadSnapshotHit(root, leafPageNumber, leaf, row);
-    }
-
-    final LeafReadSnapshotPrefixHit searchPrefixLeafReadSnapshot(
-            OpenBTree openBtree, StoreDataValue[] searchKey, boolean skipDeleted)
-            throws StandardException {
-        RootRoutingSnapshot root = rootRoutingSnapshot;
-        ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
-        if (root == null || root.rootLevel != 2 || snapshots == null) {
-            return null;
-        }
-
-        long branchPageNumber = root.route(
-                searchKey, SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH, this);
-        if (rootRoutingSnapshot != root) {
-            return null;
-        }
-
-        BTreeBranchRoutingSnapshots.Snapshot branchSnapshot = null;
-        BTreeBranchRoutingSnapshots branchSnapshots = branchRoutingSnapshots;
-        long leafPageNumber = ContainerHandle.INVALID_PAGE_NUMBER;
-
-        if (branchSnapshots != null) {
-            branchSnapshot = branchSnapshots.get(branchPageNumber);
-            if (branchSnapshot != null) {
-                leafPageNumber = branchSnapshot.route(
-                        searchKey,
-                        SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
-                        this);
-                if (rootRoutingSnapshot != root
-                        || branchRoutingSnapshots != branchSnapshots
-                        || !branchSnapshots.isCurrent(branchPageNumber, branchSnapshot)) {
-                    return null;
-                }
-            }
-        }
-
-        if (leafPageNumber == ContainerHandle.INVALID_PAGE_NUMBER) {
-            ControlRow control = ControlRow.get(openBtree, branchPageNumber);
-            try {
-                if (!(control instanceof BranchControlRow branch)
-                        || branch.getLevel() != 1) {
-                    return null;
-                }
-                branchSnapshot = observeBranchRoutingSnapshot(branch, openBtree);
-                branchSnapshots = branchRoutingSnapshots;
-                leafPageNumber = branchSnapshot.route(
-                        searchKey,
-                        SearchParameters.POSITION_LEFT_OF_PARTIAL_KEY_MATCH,
-                        this);
-            } finally {
-                control.release();
-            }
-        }
-
-        if (rootRoutingSnapshot != root
-                || (branchSnapshot != null
-                && (branchSnapshots == null
-                || branchRoutingSnapshots != branchSnapshots
-                || !branchSnapshots.isCurrent(branchPageNumber, branchSnapshot)))) {
-            return null;
-        }
-        LeafReadSnapshot leaf = snapshots.get(leafPageNumber);
-        if (leaf == null) {
-            return null;
-        }
-        StoreDataValue[][] rows = leaf.searchExactPrefix(searchKey, this, skipDeleted);
-        if (rows == null || rootRoutingSnapshot != root
-                || snapshots.get(leafPageNumber) != leaf) {
-            return null;
-        }
-        return new LeafReadSnapshotPrefixHit(root, leafPageNumber, leaf, rows);
-    }
-
     final boolean leafReadSnapshotStillCurrent(LeafReadSnapshotHit hit) {
         ConcurrentHashMap<Long, LeafReadSnapshot> snapshots = leafReadSnapshots;
         return hit != null
@@ -432,7 +336,7 @@ public abstract class BTree extends GenericConglomerate
         }
     }
 
-    private BTreeBranchRoutingSnapshots.Snapshot observeBranchRoutingSnapshot(
+    BTreeBranchRoutingSnapshots.Snapshot observeBranchRoutingSnapshot(
             BranchControlRow branch, OpenBTree openBtree)
             throws StandardException {
         return branchRoutingSnapshots().observe(branch, openBtree, this);
@@ -545,7 +449,7 @@ public abstract class BTree extends GenericConglomerate
             return childPageIds[leftSlot];
         }
 
-        private long route(
+        long route(
                 StoreDataValue[] searchKey, int partialKeyMatchOp, BTree btree)
                 throws StandardException {
             return BTreeBranchRoutingSnapshots.routeBranchRows(
