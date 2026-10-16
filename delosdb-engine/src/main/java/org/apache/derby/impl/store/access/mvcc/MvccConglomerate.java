@@ -205,6 +205,7 @@ public final class MvccConglomerate
                 currentTable,
                 xactManager,
                 rawtran,
+                hold,
                 (openMode & TransactionController.OPENMODE_FORUPDATE) != 0,
                 lockingPolicy);
     }

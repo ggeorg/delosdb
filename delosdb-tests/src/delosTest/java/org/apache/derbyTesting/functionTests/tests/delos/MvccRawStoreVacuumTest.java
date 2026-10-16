@@ -167,6 +167,8 @@ public final class MvccRawStoreVacuumTest extends MvccSqlTestSupport {
                     assertEquals(20, held.getInt(1));
                     assertFalse(held.next());
                 }
+                // Reading through the held cursor started a new transaction.
+                heldReader.commit();
 
                 // Closing the held scan releases the last lease for version 20.
                 inPlaceCompressTable(vacuum, "VACUUM_HELD_T");

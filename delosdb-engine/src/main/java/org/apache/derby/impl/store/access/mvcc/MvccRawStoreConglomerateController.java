@@ -47,6 +47,7 @@ final class MvccRawStoreConglomerateController
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
 
     private final boolean forUpdate;
+    private final boolean hold;
     private final MvccSnapshotLease statementSnapshotLease;
     private final long statementSnapshotSequence;
     // IndexRowToBaseRow owns this controller for the statement. Keep the
@@ -73,12 +74,14 @@ final class MvccRawStoreConglomerateController
             MvccRawStoreTable.Descriptor table,
             TransactionManager transactionManager,
             Transaction rawTransaction,
+            boolean hold,
             boolean forUpdate,
             LockingPolicy lockingPolicy) {
         this.runtime = runtime;
         this.table = table;
         this.transactionManager = transactionManager;
         this.rawTransaction = rawTransaction;
+        this.hold = hold;
         this.forUpdate = forUpdate;
         this.baseFetchPagePrefetchRequested =
                 !forUpdate && Boolean.getBoolean(BASE_FETCH_PAGE_PREFETCH_PROPERTY);
@@ -103,21 +106,29 @@ final class MvccRawStoreConglomerateController
     public void close() {
         if (!closed) {
             closed = true;
-            clearPrefetchedDirectories();
-            if (readVersionReader != null) {
-                readVersionReader.close();
-            }
-            if (readDirectoryContainer != null) {
-                readDirectoryContainer.close();
-            }
-            if (statementReadBoundary != null) {
-                statementReadBoundary.close();
-                statementReadBoundary = null;
-            }
+            releaseTransactionResources();
             if (statementSnapshotLease != null) {
                 statementSnapshotLease.close();
             }
             transactionManager.closeMe(this);
+        }
+    }
+
+    // The containers and the table-read boundary belong to the transaction
+    // that opened them; they are reopened lazily on the next fetch.
+    private void releaseTransactionResources() {
+        clearPrefetchedDirectories();
+        if (readVersionReader != null) {
+            readVersionReader.close();
+            readVersionReader = null;
+        }
+        if (readDirectoryContainer != null) {
+            readDirectoryContainer.close();
+            readDirectoryContainer = null;
+        }
+        if (statementReadBoundary != null) {
+            statementReadBoundary.close();
+            statementReadBoundary = null;
         }
     }
 
@@ -179,8 +190,14 @@ final class MvccRawStoreConglomerateController
 
     @Override
     public boolean closeForEndTransaction(boolean closeHeldScan) {
-        close();
-        return true;
+        if (!hold || closeHeldScan) {
+            close();
+            return true;
+        }
+        // A held cursor keeps fetching base rows after commit, so its
+        // statement lease must keep vacuum away from the versions it reads.
+        releaseTransactionResources();
+        return false;
     }
 
     @Override
