@@ -44,7 +44,7 @@ final class BTreeBranchRoutingSnapshots {
         return snapshots.get(pageNumber) == snapshot;
     }
 
-    Snapshot observe(BranchControlRow branch, OpenBTree openBtree, BTree owner)
+    Snapshot observe(BranchControlRow branch, OpenBTree openBtree, BTreeReadSnapshots owner)
             throws StandardException {
         long pageNumber = branch.page.getPageNumber();
         Snapshot current = snapshots.get(pageNumber);

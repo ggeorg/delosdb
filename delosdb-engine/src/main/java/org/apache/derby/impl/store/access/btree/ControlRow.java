@@ -165,17 +165,17 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * from this root control row. Transient because RawStore page contents,
      * not this observer reference, remain authoritative.
      */
-    private transient BTree rootRoutingOwner;
+    private transient BTreeReadSnapshots rootRoutingOwner;
 
     /** B-tree owning an immutable routing snapshot derived from this branch page. */
-    private transient BTree branchRoutingSnapshotOwner;
+    private transient BTreeReadSnapshots branchRoutingSnapshotOwner;
 
     /** Physical branch identity captured while the page is latched. */
     private transient long branchRoutingSnapshotPageNumber =
             ContainerHandle.INVALID_PAGE_NUMBER;
 
     /** B-tree owning an immutable snapshot derived from this leaf page. */
-    private transient BTree leafReadSnapshotOwner;
+    private transient BTreeReadSnapshots leafReadSnapshotOwner;
 
     /** Physical leaf identity captured while the page is latched. */
     private transient long leafReadSnapshotPageNumber =
@@ -1922,32 +1922,32 @@ public abstract class ControlRow implements AuxObject, TypedFormat
      * change only under this page's exclusive latch, as do the page changes
      * that invalidate them.
      */
-    final void observeRootRoutingSnapshot(BTree owner) {
-        BTree previous = rootRoutingOwner;
+    final void observeRootRoutingSnapshot(BTreeReadSnapshots owner) {
+        BTreeReadSnapshots previous = rootRoutingOwner;
         if (previous != null && previous != owner) {
-            previous.invalidateRootRoutingSnapshot();
+            previous.invalidateRoot();
         }
         rootRoutingOwner = owner;
     }
 
-    final void observeBranchRoutingSnapshot(BTree owner) {
-        BTree previous = branchRoutingSnapshotOwner;
+    final void observeBranchRoutingSnapshot(BTreeReadSnapshots owner) {
+        BTreeReadSnapshots previous = branchRoutingSnapshotOwner;
         if (previous != null && previous != owner
                 && branchRoutingSnapshotPageNumber
                         != ContainerHandle.INVALID_PAGE_NUMBER) {
-            previous.invalidateBranchRoutingSnapshot(
+            previous.invalidateBranch(
                     branchRoutingSnapshotPageNumber);
         }
         branchRoutingSnapshotPageNumber = page.getPageNumber();
         branchRoutingSnapshotOwner = owner;
     }
 
-    final void observeLeafReadSnapshot(BTree owner) {
-        BTree previous = leafReadSnapshotOwner;
+    final void observeLeafReadSnapshot(BTreeReadSnapshots owner) {
+        BTreeReadSnapshots previous = leafReadSnapshotOwner;
         if (previous != null && previous != owner
                 && leafReadSnapshotPageNumber
                         != ContainerHandle.INVALID_PAGE_NUMBER) {
-            previous.invalidateLeafReadSnapshot(leafReadSnapshotPageNumber);
+            previous.invalidateLeaf(leafReadSnapshotPageNumber);
         }
         leafReadSnapshotPageNumber = page.getPageNumber();
         leafReadSnapshotOwner = owner;
@@ -1955,21 +1955,21 @@ public abstract class ControlRow implements AuxObject, TypedFormat
 
     @Override
     public void pageAboutToChange() {
-        BTree owner = rootRoutingOwner;
+        BTreeReadSnapshots owner = rootRoutingOwner;
         if (owner != null) {
-            owner.invalidateRootRoutingSnapshot();
+            owner.invalidateRoot();
         }
-        BTree branchOwner = branchRoutingSnapshotOwner;
+        BTreeReadSnapshots branchOwner = branchRoutingSnapshotOwner;
         long branchPageNumber = branchRoutingSnapshotPageNumber;
         if (branchOwner != null
                 && branchPageNumber != ContainerHandle.INVALID_PAGE_NUMBER) {
-            branchOwner.invalidateBranchRoutingSnapshot(branchPageNumber);
+            branchOwner.invalidateBranch(branchPageNumber);
         }
-        BTree leafOwner = leafReadSnapshotOwner;
+        BTreeReadSnapshots leafOwner = leafReadSnapshotOwner;
         long leafPageNumber = leafReadSnapshotPageNumber;
         if (leafOwner != null
                 && leafPageNumber != ContainerHandle.INVALID_PAGE_NUMBER) {
-            leafOwner.invalidateLeafReadSnapshot(leafPageNumber);
+            leafOwner.invalidateLeaf(leafPageNumber);
         }
     }
 

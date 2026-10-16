@@ -199,8 +199,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineRowLocat
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreRowLocationBridge.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreTypeSupport.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeDeletedEntryReclaimer.java
-delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeInsertRoutingSnapshots.java
-delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeSnapshotSearch.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeReadSnapshots.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IBaseTable.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/index/IndexDefinitions.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/conglomerate/D_DiagnosticFormatting.java

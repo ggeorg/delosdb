@@ -1289,9 +1289,9 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
             SearchParameters sp, boolean countVisitedPages)
             throws StandardException {
         BTree conglomerate = getConglomerate();
-        int snapshotHeight = conglomerate.rootRoutingTreeHeight();
+        int snapshotHeight = conglomerate.readSnapshots().treeHeight();
         BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.ROOT_SNAPSHOT_ATTEMPTS);
-        ControlRow result = conglomerate.searchFromRootRoutingSnapshot(this, sp);
+        ControlRow result = conglomerate.readSnapshots().searchFromRoot(this, sp);
         if (result != null) {
             BTreePointReadDiagnostics.increment(BTreePointReadDiagnostics.ROOT_SNAPSHOT_HITS);
             BTreePointReadDiagnostics.increment(snapshotHeight == 2
@@ -1331,7 +1331,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
 
         BTree conglomerate = getConglomerate();
         LeafReadSnapshotHit hit =
-                BTreeSnapshotSearch.exact(conglomerate, init_startKeyValue);
+                conglomerate.readSnapshots().exact(init_startKeyValue);
         if (hit == null) {
             BTreePointReadDiagnostics.increment(
                     BTreePointReadDiagnostics.SNAPSHOT_POINT_SNAPSHOT_MISSES);
@@ -1350,7 +1350,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         }
         snapshotPointLockHeld = true;
 
-        if (!conglomerate.leafReadSnapshotStillCurrent(hit)) {
+        if (!conglomerate.readSnapshots().stillCurrent(hit)) {
             BTreePointReadDiagnostics.increment(
                     BTreePointReadDiagnostics.SNAPSHOT_POINT_REVALIDATION_FALLBACKS);
             releaseSnapshotPointLock();
@@ -1398,7 +1398,7 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
     final void observeSnapshotPointLeaf() throws StandardException {
         if ((isSnapshotPointReadShape() || isSnapshotPrefixReadShape())
                 && scan_position.current_leaf != null) {
-            getConglomerate().observeLeafReadSnapshot(
+            getConglomerate().readSnapshots().observeLeaf(
                     scan_position.current_leaf, this);
         }
     }
@@ -1435,8 +1435,8 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         if (scan_state != SCAN_INIT || !isSnapshotPrefixReadShape()) {
             return -1;
         }
-        LeafReadSnapshotPrefixHit hit = BTreeSnapshotSearch.prefix(
-                getConglomerate(), this, init_startKeyValue, !checksVisibility());
+        LeafReadSnapshotPrefixHit hit = getConglomerate().readSnapshots().prefix(
+                this, init_startKeyValue, !checksVisibility());
         if (hit == null) {
             return -1;
         }

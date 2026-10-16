@@ -244,8 +244,8 @@ public class BranchControlRow extends ControlRow
             long snapshotChildPageId = ContainerHandle.INVALID_PAGE_NUMBER;
             if (this.page.getPageNumber() == BTree.ROOTPAGEID
                     && !sp.searchForOptimizer) {
-                snapshotChildPageId = sp.btree.getConglomerate()
-                        .searchRootRoutingSnapshot(this, sp.btree, sp);
+                snapshotChildPageId = sp.btree.getConglomerate().readSnapshots()
+                        .searchRoot(this, sp.btree, sp);
             } else {
                 searchForEntry(sp);
             }
