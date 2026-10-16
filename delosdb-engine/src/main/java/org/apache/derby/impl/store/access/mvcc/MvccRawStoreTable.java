@@ -2050,20 +2050,9 @@ final class MvccRawStoreTable {
     static boolean delete(
             Transaction rawTransaction,
             Descriptor table,
-            long rowId,
-            MvccRawStoreTransactionContext context) throws StandardException {
-        return delete(
-                rawTransaction,
-                table,
-                new MvccRowLocation(rowId),
-                context);
-    }
-
-    static boolean delete(
-            Transaction rawTransaction,
-            Descriptor table,
             MvccRowLocation rowLocation,
-            MvccRawStoreTransactionContext context) throws StandardException {
+            MvccRawStoreTransactionContext context,
+            boolean useLockedCurrentHead) throws StandardException {
         if (table.gen2A1()) {
             if (!table.gen2History()) {
                 rejectGen2A1HistoryMutation(table);
@@ -2077,7 +2066,11 @@ final class MvccRawStoreTable {
         }
         long rowId = rowLocation.rowId();
         context.beforeRowWrite(table, rowId);
-        MutationTarget target = mutationTarget(rawTransaction, table, rowLocation, context);
+        // As for an update: a read-committed delete that waited for the row
+        // lock acts on the row's current committed version, even when its
+        // snapshot was taken before that version's commit was published.
+        MutationTarget target = mutationTarget(
+                rawTransaction, table, rowLocation, context, useLockedCurrentHead);
         if (target == null) {
             return false;
         }
@@ -2642,14 +2635,6 @@ final class MvccRawStoreTable {
                     SQLState.DEADLOCK,
                     "RawStore MVCC write conflict for logical row " + rowLocation.rowId());
         }
-    }
-
-    private static MutationTarget mutationTarget(
-            Transaction transaction,
-            Descriptor table,
-            MvccRowLocation rowLocation,
-            MvccRawStoreTransactionContext context) throws StandardException {
-        return mutationTarget(transaction, table, rowLocation, context, false);
     }
 
     private static MutationTarget mutationTarget(

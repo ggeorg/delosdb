@@ -195,7 +195,8 @@ final class MvccRawStoreConglomerateController
                 rawTransaction,
                 table,
                 MvccRowLocation.from(loc),
-                context);
+                context,
+                forUpdate && readCommittedUpdateRecheck);
     }
 
     @Override

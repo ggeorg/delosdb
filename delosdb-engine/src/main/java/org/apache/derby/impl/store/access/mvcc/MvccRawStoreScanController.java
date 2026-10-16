@@ -232,7 +232,8 @@ final class MvccRawStoreScanController implements ScanManager {
                 rawTransaction,
                 table,
                 location,
-                runtime.context(transactionManager, rawTransaction));
+                runtime.context(transactionManager, rawTransaction),
+                readCommittedUpdateRecheck);
         currentDeleted = deleted;
         return deleted;
     }
