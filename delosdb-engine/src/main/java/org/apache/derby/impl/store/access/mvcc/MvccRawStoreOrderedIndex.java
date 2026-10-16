@@ -639,7 +639,7 @@ final class MvccRawStoreOrderedIndex {
         return MvccRawStoreVersionRows.projection(table, projection);
     }
 
-    private static boolean containsNull(StoreDataValue[] values, int[] columns)
+    static boolean containsNull(StoreDataValue[] values, int[] columns)
             throws StandardException {
         for (int column : columns) {
             if (StoreTypeUtil.isNull(values[column])) {

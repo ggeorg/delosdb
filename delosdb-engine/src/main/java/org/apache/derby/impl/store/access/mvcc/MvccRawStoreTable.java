@@ -1348,7 +1348,7 @@ final class MvccRawStoreTable {
         // unchanged unique key. Reuse that transaction-local proof instead of
         // rescanning the candidate B-trees; a new logical row id is still
         // allocated below, preserving the v1 identity contract.
-        MvccRawStoreTransactionContext.DeletedKeyProof deletedKeyProof =
+        MvccDeletedKeyProof deletedKeyProof =
                 context.deletedKeyProof(table, values);
         if (deletedKeyProof == null) {
             MvccRawStoreOrderedIndex.assertUnique(
