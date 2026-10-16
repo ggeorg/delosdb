@@ -32,9 +32,9 @@ import org.apache.derby.impl.store.raw.log.LogCounter;
 import org.apache.derby.shared.common.error.StandardException;
 
 /**
- * F08-B/F08-C/F08-D/F08-E/F08-F diagnostic: separates JDBC batch execution from
+ * F08-B/F08-C/F08-D/F08-F diagnostic: separates JDBC batch execution from
  * transaction commit and compares scalar commit stamping, page reuse, page-level RawStore
- * WAL batching, the non-semantic no-stamp upper bound, and durable transaction-status visibility.
+ * WAL batching, and durable transaction-status visibility.
  */
 public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
     private static final String REPORT_DIRECTORY_PROPERTY =
@@ -47,16 +47,12 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
             "delosdb.benchmark.f08InsertCommit.batchControl";
     private static final String WAL_BATCH_CONTROL_PROPERTY =
             "delosdb.benchmark.f08InsertCommit.walBatchControl";
-    private static final String NO_STAMP_CONTROL_PROPERTY =
-            "delosdb.benchmark.f08InsertCommit.noStampControl";
     private static final String TRANSACTION_STATUS_CONTROL_PROPERTY =
             "delosdb.benchmark.f08InsertCommit.transactionStatusControl";
     private static final String COMMIT_STAMP_BATCH_PROPERTY =
             "delosdb.experimental.mvccGen2CommitStampBatch.enabled";
     private static final String COMMIT_STAMP_WAL_BATCH_PROPERTY =
             "delosdb.experimental.mvccGen2CommitStampWalBatch.enabled";
-    private static final String COMMIT_STAMP_ELISION_CONTROL_PROPERTY =
-            "delosdb.experimental.mvccGen2CommitStampElisionControl.enabled";
     private static final String TRANSACTION_STATUS_VISIBILITY_PROPERTY =
             "delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled";
     private static final int PAYLOAD_WIDTH = 96;
@@ -69,16 +65,11 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
 
         boolean batchControl = Boolean.getBoolean(BATCH_CONTROL_PROPERTY);
         boolean walBatchControl = Boolean.getBoolean(WAL_BATCH_CONTROL_PROPERTY);
-        boolean noStampControl = Boolean.getBoolean(NO_STAMP_CONTROL_PROPERTY);
         boolean transactionStatusControl = Boolean.getBoolean(TRANSACTION_STATUS_CONTROL_PROPERTY);
         List<Observation> observations = new ArrayList<>();
         for (int width : new int[] {1, 100}) {
             observations.add(measure(Provider.HEAP, Shape.BARE, width, fixtureRows, repetitions));
             observations.add(measure(Provider.GEN2_A1, Shape.BARE, width, fixtureRows, repetitions));
-            if (noStampControl) {
-                observations.add(measure(
-                        Provider.GEN2_A1_NO_STAMP, Shape.BARE, width, fixtureRows, repetitions));
-            }
             if (transactionStatusControl) {
                 observations.add(measure(
                         Provider.GEN2_A1_TX_STATUS, Shape.BARE, width, fixtureRows, repetitions));
@@ -97,14 +88,6 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
             }
             observations.add(measure(Provider.HEAP, Shape.PRIMARY_KEY, width, fixtureRows, repetitions));
             observations.add(measure(Provider.GEN2_B, Shape.PRIMARY_KEY, width, fixtureRows, repetitions));
-            if (noStampControl) {
-                observations.add(measure(
-                        Provider.GEN2_B_NO_STAMP,
-                        Shape.PRIMARY_KEY,
-                        width,
-                        fixtureRows,
-                        repetitions));
-            }
             if (transactionStatusControl) {
                 observations.add(measure(
                         Provider.GEN2_B_TX_STATUS,
@@ -131,9 +114,6 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
         }
         if (walBatchControl) {
             assertCommitStampWalBatching(observations);
-        }
-        if (noStampControl) {
-            assertCommitStampElided(observations);
         }
         if (transactionStatusControl) {
             assertTransactionStatusVisibilityWalShape(observations);
@@ -194,25 +174,6 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
         }
     }
 
-    private static void assertCommitStampElided(List<Observation> observations) {
-        for (Shape shape : Shape.values()) {
-            Provider noStamp = shape == Shape.BARE
-                    ? Provider.GEN2_A1_NO_STAMP
-                    : Provider.GEN2_B_NO_STAMP;
-            for (int width : new int[] {1, 100}) {
-                Observation observation = observation(observations, noStamp, shape, width);
-                WalSummary scalar = observation.wal().get("UpdateFieldOperation");
-                WalSummary batched = observation.wal().get("UpdateFieldsOperation");
-                assertTrue(
-                        "no-stamp upper-bound control must emit no scalar commit-stamp WAL",
-                        scalar == null || scalar.count() == 0L);
-                assertTrue(
-                        "no-stamp upper-bound control must emit no batched commit-stamp WAL",
-                        batched == null || batched.count() == 0L);
-            }
-        }
-    }
-
     private static void assertTransactionStatusVisibilityWalShape(
             List<Observation> observations) {
         for (Shape shape : Shape.values()) {
@@ -259,8 +220,6 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
         String previousCommitStampBatch = System.getProperty(COMMIT_STAMP_BATCH_PROPERTY);
         String previousCommitStampWalBatch =
                 System.getProperty(COMMIT_STAMP_WAL_BATCH_PROPERTY);
-        String previousCommitStampElision =
-                System.getProperty(COMMIT_STAMP_ELISION_CONTROL_PROPERTY);
         String previousTransactionStatus =
                 System.getProperty(TRANSACTION_STATUS_VISIBILITY_PROPERTY);
         configure(provider);
@@ -329,7 +288,6 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
             restore("delosdb.experimental.mvccGen2C1.history.enabled", previousC1);
             restore(COMMIT_STAMP_BATCH_PROPERTY, previousCommitStampBatch);
             restore(COMMIT_STAMP_WAL_BATCH_PROPERTY, previousCommitStampWalBatch);
-            restore(COMMIT_STAMP_ELISION_CONTROL_PROPERTY, previousCommitStampElision);
             restore(TRANSACTION_STATUS_VISIBILITY_PROPERTY, previousTransactionStatus);
             shutdownDatabase(database);
         }
@@ -338,14 +296,12 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
     private static void configure(Provider provider) {
         System.clearProperty("delosdb.experimental.mvccGen2C1.history.enabled");
         if (provider == Provider.GEN2_A1
-                || provider == Provider.GEN2_A1_NO_STAMP
                 || provider == Provider.GEN2_A1_TX_STATUS
                 || provider == Provider.GEN2_A1_BATCHED
                 || provider == Provider.GEN2_A1_WAL_BATCHED) {
             System.setProperty("delosdb.experimental.mvccGen2A1.enabled", "true");
             System.clearProperty("delosdb.experimental.mvccGen2B.pk.enabled");
         } else if (provider == Provider.GEN2_B
-                || provider == Provider.GEN2_B_NO_STAMP
                 || provider == Provider.GEN2_B_TX_STATUS
                 || provider == Provider.GEN2_B_BATCHED
                 || provider == Provider.GEN2_B_WAL_BATCHED) {
@@ -364,11 +320,6 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
             System.setProperty(COMMIT_STAMP_WAL_BATCH_PROPERTY, "true");
         } else {
             System.clearProperty(COMMIT_STAMP_WAL_BATCH_PROPERTY);
-        }
-        if (provider.elideCommitStamp) {
-            System.setProperty(COMMIT_STAMP_ELISION_CONTROL_PROPERTY, "true");
-        } else {
-            System.clearProperty(COMMIT_STAMP_ELISION_CONTROL_PROPERTY);
         }
         if (provider.transactionStatusVisibility) {
             System.setProperty(TRANSACTION_STATUS_VISIBILITY_PROPERTY, "true");
@@ -588,34 +539,29 @@ public final class F08InsertCommitDecompositionTest extends MvccSqlTestSupport {
     }
 
     private enum Provider {
-        HEAP("Delos Heap", false, false, false, false),
-        GEN2_A1("MVCC Gen2-A1 scalar stamp", false, false, false, false),
-        GEN2_A1_NO_STAMP("MVCC Gen2-A1 no-stamp upper bound", false, false, true, false),
-        GEN2_A1_TX_STATUS("MVCC Gen2-A1 transaction-status visibility", false, false, false, true),
-        GEN2_A1_BATCHED("MVCC Gen2-A1 page-reuse stamp", true, false, false, false),
-        GEN2_A1_WAL_BATCHED("MVCC Gen2-A1 page+WAL batched stamp", true, true, false, false),
-        GEN2_B("MVCC Gen2-B scalar stamp", false, false, false, false),
-        GEN2_B_NO_STAMP("MVCC Gen2-B no-stamp upper bound", false, false, true, false),
-        GEN2_B_TX_STATUS("MVCC Gen2-B transaction-status visibility", false, false, false, true),
-        GEN2_B_BATCHED("MVCC Gen2-B page-reuse stamp", true, false, false, false),
-        GEN2_B_WAL_BATCHED("MVCC Gen2-B page+WAL batched stamp", true, true, false, false);
+        HEAP("Delos Heap", false, false, false),
+        GEN2_A1("MVCC Gen2-A1 scalar stamp", false, false, false),
+        GEN2_A1_TX_STATUS("MVCC Gen2-A1 transaction-status visibility", false, false, true),
+        GEN2_A1_BATCHED("MVCC Gen2-A1 page-reuse stamp", true, false, false),
+        GEN2_A1_WAL_BATCHED("MVCC Gen2-A1 page+WAL batched stamp", true, true, false),
+        GEN2_B("MVCC Gen2-B scalar stamp", false, false, false),
+        GEN2_B_TX_STATUS("MVCC Gen2-B transaction-status visibility", false, false, true),
+        GEN2_B_BATCHED("MVCC Gen2-B page-reuse stamp", true, false, false),
+        GEN2_B_WAL_BATCHED("MVCC Gen2-B page+WAL batched stamp", true, true, false);
 
         private final String display;
         private final boolean pageReuseCommitStamp;
         private final boolean walBatchedCommitStamp;
-        private final boolean elideCommitStamp;
         private final boolean transactionStatusVisibility;
 
         Provider(
                 String display,
                 boolean pageReuseCommitStamp,
                 boolean walBatchedCommitStamp,
-                boolean elideCommitStamp,
                 boolean transactionStatusVisibility) {
             this.display = display;
             this.pageReuseCommitStamp = pageReuseCommitStamp;
             this.walBatchedCommitStamp = walBatchedCommitStamp;
-            this.elideCommitStamp = elideCommitStamp;
             this.transactionStatusVisibility = transactionStatusVisibility;
         }
     }
