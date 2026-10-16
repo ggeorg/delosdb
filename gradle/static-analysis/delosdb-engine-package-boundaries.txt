@@ -9,7 +9,6 @@
 delosdb-engine
 delosdb-derby-store-api
 delosdb-storage-derby
-delosdb-storage-mvcc
 
 # group package-prefix; the first matching row decides, * matches the rest.
 [package-groups]

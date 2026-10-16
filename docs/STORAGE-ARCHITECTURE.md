@@ -194,7 +194,7 @@ authority.
 ```bash
 ./gradlew verifyDelosRuntimeStorageProviders
 ./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
-./gradlew :delosdb-storage-mvcc:check
+./gradlew :delosdb-engine:check
 ./gradlew s0CloseoutVerification
 ```
 

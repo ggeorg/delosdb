@@ -7,7 +7,7 @@ small amount of deferred structure represented in the checked architecture manif
 
 ## Current module graph
 
-The current build contains 20 Gradle subprojects:
+The current build contains 19 Gradle subprojects:
 
 ```text
 delosdb-osgi-stub
@@ -16,7 +16,6 @@ delosdb-runtime-api
 delosdb-annotations
 delosdb-spi
 delosdb-derby-store-api
-delosdb-storage-mvcc
 delosdb-storage-derby
 delosdb-engine
 delosdb-client
@@ -38,15 +37,20 @@ The former projects below are retired and are not part of the current build:
 delosdb-storage-api
 delosdb-storage-bridge
 delosdb-storage-io
+delosdb-storage-mvcc
 ```
+
+`delosdb-storage-mvcc` was merged into `delosdb-engine` as the package
+`org.apache.derby.impl.store.access.mvcc`, the start of the engine build consolidation in
+`docs/design/REFERENCE-CODEBASE-STRUCTURE.md`.
 
 ## Ownership rules
 
 ```text
 RawStore is the sole physical persistence and recovery authority.
 The inherited heap and delos_mvcc are peer access methods over that authority.
-The engine depends on neutral contracts rather than the MVCC implementation module.
-The MVCC implementation does not depend on engine implementation classes.
+SQL code depends on neutral contracts rather than the MVCC implementation package.
+The MVCC implementation depends only on the store contracts, not on SQL, RawStore or heap code.
 Retired storage modules do not return through build-output or classpath shortcuts.
 ```
 
@@ -62,10 +66,8 @@ delosdb-runtime-api       delosdb-spi
        +---------+---------+
        |                   |
 delosdb-storage-derby  delosdb-engine
-                           |
-                   neutral discovery
-                           |
-                 delosdb-storage-mvcc
+                       (SQL; impl.store.access.mvcc, found
+                        through neutral discovery)
 ```
 
 Representative allowed dependencies are:
@@ -82,32 +84,26 @@ delosdb-storage-derby
     -> delosdb-runtime-api
     -> delosdb-derby-store-api
 
-delosdb-storage-mvcc
-    -> delosdb-runtime-api
-    -> delosdb-derby-store-api
-    -> delosdb-spi
-    -> delosdb-commons
 ```
 
-Forbidden production directions include:
-
-```text
-delosdb-engine       -X-> delosdb-storage-mvcc
-delosdb-storage-mvcc -X-> delosdb-engine implementation
-delosdb-storage-derby -X-> delosdb-storage-mvcc
-```
+Inside the engine module, package groups replace project boundaries. The checked manifest
+`gradle/static-analysis/delosdb-engine-package-boundaries.txt` lets SQL code use the store contracts
+and kernel services but not the RawStore, heap or MVCC implementation, lets MVCC use only the store
+contracts, and keeps RawStore and heap code off MVCC. `delosModuleDependencyBoundaryStaticAnalysis`
+enforces it.
 
 ## Provider discovery and packaging
 
-`delosdb-storage-mvcc` owns the production `ExternalAccessMethodProvider` implementation:
+The engine's `impl.store.access.mvcc` package owns the production `ExternalAccessMethodProvider`
+implementation:
 
 ```text
 org.apache.derby.impl.store.access.mvcc.DerbyMvccAccessMethodProvider
 ```
 
-The provider jar is assembled as `delosdb-storage-mvcc.jar`. For the current Derby-compatible
-runtime packaging, its implementation package and provider metadata are also incorporated into
-`derby.jar`; the separate provider jar is not simultaneously added to the normal runtime classpath.
+It ships in `derby.jar` with its provider registration; the separate `delosdb-storage-mvcc.jar` is
+retired. Discovery through `ExternalAccessMethodProvider` remains for optional providers such as the
+deferred `delosdb-search-lucene`.
 
 `delosdb-derby-store-api.jar` is likewise an assembled support artifact rather than a normal runtime
 jar. `delosdb-storage-derby.jar` remains build-only.
@@ -139,7 +135,7 @@ external access-method providers.
 Owns DelosDB's RawStore implementation integration and remains below access-method providers in the
 dependency graph.
 
-### `delosdb-storage-mvcc`
+### MVCC access method (`delosdb-engine`, `impl.store.access.mvcc`)
 
 Owns the RawStore-backed `delos_mvcc` access method, its provider registration, logical MVCC state,
 indexes, maintenance, and diagnostics.

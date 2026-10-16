@@ -70,7 +70,7 @@ Do not replace DRDA with Netty, gRPC, JSON, protobuf, or another protocol inside
 No release should be cut unless the required verification passes:
 
 ```sh
-./gradlew clean releaseVerification :delosdb-storage-mvcc:check
+./gradlew clean releaseVerification :delosdb-engine:check
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:derbyLanguageTests
 ./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests

@@ -10,9 +10,9 @@ group = rootProject.group
 // Gradle subproject for inherited Derby storage implementations patched into
 // org.apache.derby.engine, including heap/raw/access/WAL code. This source set is
 // compiled on the classpath because the current runtime still packages these
-// classes into the Derby engine jar. Derby-facing MVCC access-method glue lives
-// in delosdb-storage-mvcc so this inherited storage module does not depend on
-// the MVCC access-method implementation.
+// classes into the Derby engine jar. The MVCC access method lives in the engine
+// project's impl.store.access.mvcc package; the engine package-boundary check
+// keeps this inherited storage code from depending on it.
 def sourceRoot = file('src/main/java')
 def mainClassDir = layout.buildDirectory.dir('classes/main')
 

@@ -116,12 +116,11 @@ Core production ownership is separated as follows:
 | `delosdb-spi` | provider-neutral external-index contracts |
 | `delosdb-derby-store-api` | neutral storage/access-method contracts |
 | `delosdb-storage-derby` | inherited heap and RawStore implementation |
-| `delosdb-storage-mvcc` | MVCC provider and semantics |
-| `delosdb-engine` | SQL, catalogs, execution, embedded JDBC |
+| `delosdb-engine` | SQL, catalogs, execution, embedded JDBC; MVCC provider and semantics in `impl.store.access.mvcc` |
 | `delosdb-client` | DRDA client |
 | `delosdb-server` | DRDA server |
 
-The engine must not depend directly on the MVCC implementation. Providers are discovered through
+SQL code must not depend directly on the MVCC implementation package. Providers are discovered through
 neutral contracts and runtime provider metadata.
 
 Retired modules and artifacts:

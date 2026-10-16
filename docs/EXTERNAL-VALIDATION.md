@@ -65,7 +65,7 @@ SQL/JDBC generator.
 External validation is deliberately not wired into:
 
 * `s0CloseoutVerification`
-* `:delosdb-storage-mvcc:check`
+* `:delosdb-engine:check`
 * `:delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests`
 
 This keeps compatibility and normal verification deterministic while allowing CI

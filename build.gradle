@@ -164,7 +164,6 @@ def engineClassDir = moduleClassDir(moduleNames.engine)
 def commonsClassDir = moduleClassDir(moduleNames.commons)
 def derbyStoreApiClassDir = project(':delosdb-derby-store-api').layout.buildDirectory.dir('classes/store-api')
 def derbyStorageClassDir = project(':delosdb-storage-derby').layout.buildDirectory.dir('classes/main')
-def storageMvccClassDir = project(':delosdb-storage-mvcc').layout.buildDirectory.dir('classes/main')
 def classSizeCatalogOutputFile = generatedSourceDir(moduleNames.runtimeApi).map {
     it.file('org/apache/derby/iapi/services/cache/ClassSizeCatalogImpl.java')
 }
@@ -174,12 +173,11 @@ def classSizeCrawlerClasspath = files(
         runtimeApiClassDir,
         engineClassDir,
         derbyStoreApiClassDir,
-        derbyStorageClassDir,
-        storageMvccClassDir)
+        derbyStorageClassDir)
 def rootProjectDirectory = layout.projectDirectory.asFile
 
 tasks.register('generateClassSizeCatalog') {
-    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', ':delosdb-storage-mvcc:compileStorageMvcc', 'compileDerbyBuildTools'
+    dependsOn ':delosdb-engine:compileDerbyEngine', ':delosdb-runtime-api:compileDelosDbRuntimeApi', ':delosdb-derby-store-api:compileDerbyStoreApi', ':delosdb-storage-derby:compileLegacyDerbyStorage', 'compileDerbyBuildTools'
     inputs.files(classSizeCrawlerClasspath).withPropertyName('classSizeCrawlerClasspath')
     outputs.file(classSizeCatalogOutputFile)
     doLast {
@@ -672,9 +670,6 @@ tasks.register('releaseVerification') {
 tasks.named('build') {
     dependsOn 'jars'
 }
-
-// MVCC verification tasks are owned by :delosdb-storage-mvcc.
-// Use their canonical project-qualified task names directly.
 
 // JDK 25 bytecode verification lane. This uses the standard Class-File API
 // to verify compiled Derby/DelosDB runtime outputs after ClassFileJava becomes
