@@ -42,6 +42,13 @@ The task uses [`../examples/readable-engine.sql`](../examples/readable-engine.sq
 disposable database under `build/readable-engine-demo` on each run. See
 [`READABLE-ENGINE.md`](READABLE-ENGINE.md) for the production trace behind the output.
 
+The write path has its own demonstration, [`../examples/readable-write.sql`](../examples/readable-write.sql),
+which shows one transaction's locks, log position and pages:
+
+```bash
+./gradlew readableWriteDemo --console=plain
+```
+
 ## Focused iteration
 
 Run the affected module and the smallest directly relevant verification. Examples:

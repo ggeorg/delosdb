@@ -179,6 +179,84 @@ comparisons are renderer-time derivations; they do not feed back into optimizer 
 
 The final row is returned through the normal JDBC/DRDA result path as `PLAN_TEXT` and `PLAN_JSON` CLOBs.
 
+## One write end to end
+
+The second demonstration inserts one row into a heap table and one into a `delos_mvcc` table in a
+single transaction, and shows that transaction through Derby's diagnostic tables before and after
+`COMMIT`:
+
+```bash
+./gradlew readableWriteDemo --console=plain
+```
+
+The SQL is [`../examples/readable-write.sql`](../examples/readable-write.sql). Its database is recreated
+under `build/readable-write-demo` on each run.
+
+### 1. Statement and row change
+
+An `INSERT` enters and compiles like the query above, and its generated tree is rooted at
+`InsertResultSet` (`impl/sql/execute`). `RowChangerImpl.insertRow()` writes the base row through the
+table's `ConglomerateController` and each index row through an `IndexChanger`. The controller is the
+access method's: `HeapController` for a heap table, `MvccRawStoreConglomerateController` for
+`delos_mvcc`, whose `MvccRawStoreTable.insert()` writes the row's version.
+
+### 2. Locks held until commit
+
+`SYSCS_DIAG.LOCK_TABLE` shows the transaction's locks while it is open:
+
+```text
+heap   TABLE IX   READABLE_HEAP       intent lock on the table
+heap   ROW   X    READABLE_HEAP       the inserted row
+mvcc   TABLE IX   READABLE_MVCC
+mvcc   ROW   X    READABLE_MVCC
+mvcc   DELOS_MVCC_KEY    X            the primary-key value, taken by the access method's own
+                                      uniqueness check (MvccRawStoreTransactionContext.lockUniqueKeys)
+mvcc   DELOS_MVCC_SCHEMA S            shared table-schema lock that DDL takes exclusively
+mvcc   TABLE IX / ROW X  *** TRANSIENT_<id>   one of the MVCC table's own RawStore containers,
+                                      which the data dictionary does not list
+```
+
+Heap and MVCC share the one lock manager in `impl/services/locks`.
+
+### 3. Pages and the log
+
+Every page change is a logged operation: an insert is an `InsertOperation` (`impl/store/raw/data`),
+applied through `Xact.logAndDo()`, which has `FileLogger.logAndDo()` write the log record before the
+page changes. `SYSCS_DIAG.TRANSACTION_TABLE` shows the open transaction's `FIRST_INSTANT`, the log
+position of its first record. The heap and MVCC rows reach pages through the same RawStore, so they
+share this write-ahead log; MVCC has no log of its own. `SYSCS_DIAG.SPACE_TABLE` shows the pages each
+container of the heap table and its index uses.
+
+### 4. Commit
+
+`COMMIT` reaches `GenericLanguageConnectionContext.userCommit()`, then the store transaction.
+`Xact.commit()` writes the commit record and forces the log to disk (`LogToFile.flush()`), then
+releases the transaction's locks (`unlockGroup`). For MVCC the runtime then publishes the
+transaction's commit sequence (`MvccRawStoreRuntime`), which is what makes the new versions visible to
+snapshots taken afterwards. The lock table is empty again after `COMMIT`.
+
+### 5. Recovery
+
+If the process stops before or after `COMMIT`, the next boot replays the log: `LogToFile.recover()`
+redoes logged work (`FileLogger.redo()`) and rolls back transactions that never committed. Heap and
+MVCC recover together because they share the log.
+
+### Source map for the write
+
+| Responsibility | Production authority |
+|---|---|
+| insert execution | `InsertResultSet`, `RowChangerImpl`, `IndexChanger` |
+| heap row placement | `HeapController` |
+| MVCC row version and uniqueness | `MvccRawStoreConglomerateController`, `MvccRawStoreTable`, `MvccRawStoreOrderedIndex` |
+| locks | `impl/services/locks` (`ConcurrentLockSet`); MVCC logical locks in `MvccRawStoreTransactionContext` |
+| logged page operations | `InsertOperation` and the other `impl/store/raw/data` operations; `Xact.logAndDo()` |
+| log writing, flush and recovery | `FileLogger`, `LogToFile` |
+| commit | `Xact.commit()`; MVCC commit publication in `MvccRawStoreRuntime` |
+
+The demonstration is teaching material. Recovery is proven by `delosRecoveryTests`, MVCC uniqueness
+and its locking by `MvccRawStoreUniqueConstraintTest`, and the lock table's contents by
+`LockTableVtiTest`.
+
 ## Determinism and execution-specific values
 
 Ordinary `EXPLAIN` is deterministic for the same selected plan and has embedded/DRDA byte parity.

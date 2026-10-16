@@ -317,6 +317,7 @@ tasks.named('assemble') {
 // Keep this declaration before tasks that reference it during Gradle configuration.
 def smokeSqlFile = file('examples/smoke.sql')
 def readableEngineSqlFile = file('examples/readable-engine.sql')
+def readableWriteSqlFile = file('examples/readable-write.sql')
 
 
 tasks.register('sysinfoFromJars', JavaExec) {
@@ -356,6 +357,19 @@ tasks.register('readableEngineDemo', JavaExec) {
     }
 }
 
+tasks.register('readableWriteDemo', JavaExec) {
+    dependsOn 'jars'
+    group = 'demonstration'
+    description = 'Runs the readable-engine write demonstration: locks, log position and pages of one transaction.'
+    classpath = runtimeJars()
+    mainClass = 'org.apache.derby.run.run'
+    args 'ij', readableWriteSqlFile.absolutePath
+    workingDir = projectDir
+    doFirst {
+        delete file('build/readable-write-demo')
+    }
+}
+
 
 def distributionBaseName = "delosdb-${delosDbVersion}"
 def distributionStagingDir = layout.buildDirectory.dir("release/${distributionBaseName}")
@@ -388,6 +402,9 @@ tasks.register('prepareBinaryDistribution', Copy) {
         into 'examples'
     }
     from(readableEngineSqlFile) {
+        into 'examples'
+    }
+    from(readableWriteSqlFile) {
         into 'examples'
     }
     doFirst {

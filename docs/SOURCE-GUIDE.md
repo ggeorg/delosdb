@@ -22,6 +22,15 @@ DelosDB's teaching subject is the production database. Start with one operation 
 | Who names tables and transactions in lock timeout and deadlock reports? | `Deadlock` and `Timeout` call the runtime-api contract `LockReportSupport`; the engine implements it in `impl/sql/conn/EngineLockReportSupport`, which uses `TableNameInfo` |
 | Which lock requests take the lock manager's fast paths? | `ConcurrentLockSet` and `AbstractPool` compare requests with the store's lock modes from `LockFastPaths`, which reads the runtime-api contract `LockFastPathSupport`; the store contracts implement it in `iapi/store/raw/StoreLockFastPathSupport` |
 | Which cache entries are kept without the entry mutex? | Those of a cache created with `lockFreeKeeps` (`CacheFactory.newCacheManager`); the store asks for it only for its container cache in `BaseDataFileFactory`, and `ConcurrentCache` passes it to every `CacheEntry` through `CacheEntry.Kind` |
+| Where are parent host observation and campaign reports? | [BenchmarkHostObservation](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkHostObservation.java) owns host/process sampling and cooldown; [BenchmarkReports](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkReports.java) owns validation, aggregation and published campaign evidence |
+| Where are transport and client ownership? | `delosdb-server/.../impl/drda` and `delosdb-client/.../client` |
+
+## Benchmark tooling
+
+Benchmarks are opt-in test support, not part of the database. Their owners:
+
+| Question | Current owner and entry point |
+|---|---|
 | Who owns forked benchmark JVM execution? | [BenchmarkWorkerProcess](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkerProcess.java) owns launch/wait/timeout/log failure handling; [BenchmarkWorkerCommand](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkerCommand.java) constructs arguments; [BenchmarkConfiguration](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkConfiguration.java) owns defaults, campaign validation and classpaths; [BenchmarkWorkloadRunner](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkloadRunner.java) owns the child case schedule and report lifecycle; [BenchmarkCaseMeasurement](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkCaseMeasurement.java) owns measurement; [BenchmarkConcurrentCase](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkConcurrentCase.java) owns concurrent clients and intervals |
 | Where are shared benchmark workloads, targets and result contracts? | [BenchmarkModel](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkModel.java) defines targets/endpoints, workload classification, case shapes, measurement/oracle/protocol records and CSV contracts |
 | Who owns per-case benchmark measurement? | [BenchmarkCaseMeasurement](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkCaseMeasurement.java) owns warmup/measured budgets, semantic verification and cleanup; [BenchmarkConcurrentCase](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkConcurrentCase.java) owns concurrent clients and intervals |
@@ -30,10 +39,8 @@ DelosDB's teaching subject is the production database. Start with one operation 
 | Where are shared benchmark SQL and workload calculations? | [BenchmarkWorkloadSql](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkWorkloadSql.java) owns benchmark statement construction, row selection and expected-value calculations; this is test support, not the database SQL compiler |
 | Where are older benchmark experiments? | [BenchmarkJoinExperiments](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkJoinExperiments.java) owns join/costing/access experiments; [BenchmarkRelationalExperiments](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkRelationalExperiments.java) owns projection/group/sort experiments; [BenchmarkExperimentSupport](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkExperimentSupport.java) owns shared explain/profile helpers |
 | Who owns parent benchmark containers and commands? | [BenchmarkContainerCampaign](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkContainerCampaign.java) owns container startup/readiness/server profiling; [BenchmarkParentCommand](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkParentCommand.java) owns captured command execution |
-| Where are parent host observation and campaign reports? | [BenchmarkHostObservation](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkHostObservation.java) owns host/process sampling and cooldown; [BenchmarkReports](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkReports.java) owns validation, aggregation and published campaign evidence |
 | Where are benchmark fixtures built? | [BenchmarkFixtures](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkFixtures.java) owns base/auxiliary table preparation, fixture data, statistics refresh and range-fetch setup |
 | Where is per-case benchmark diagnostic evidence collected? | [BenchmarkCaseDiagnostics](../delosdb-tests/src/delosTestSupport/java/io/github/ggeorg/delosdb/benchmark/jdbc/BenchmarkCaseDiagnostics.java) owns counters/snapshots and evidence files; parent sampling is in `BenchmarkHostObservation`; shared explain helpers are in `BenchmarkExperimentSupport` |
-| Where are transport and client ownership? | `delosdb-server/.../impl/drda` and `delosdb-client/.../client` |
 
 One database transaction decision and one RawStore persistence/recovery authority serve heap and MVCC access methods. A fork experimenting with MVCC visibility does not need to invent a separate WAL. A fork experimenting with page placement must preserve physical page validity, rollback and recovery.
 
@@ -45,11 +52,18 @@ One database transaction decision and one RawStore persistence/recovery authorit
 
 [READABLE-ENGINE.md](READABLE-ENGINE.md) walks from SQL compilation through generated activation, execution, storage and stable EXPLAIN evidence. The demo uses real runtime jars and a disposable database under `build/`. It is a learning entry point, not an alternate execution engine.
 
+Then follow a write, from `INSERT` through locks, logged page changes and `COMMIT` to recovery:
+
+```bash
+./gradlew readableWriteDemo --console=plain
+```
+
 ## Understand the build layers
 
-- `settings.gradle` defines Gradle source owners. A project is not necessarily a separately loaded runtime module.
-- `module-info.java` defines JPMS identities and exports where present.
-- [gradle/delosdb-runtime-artifacts.gradle](../gradle/delosdb-runtime-artifacts.gradle) owns assembled and distributed artifacts. Storage payloads are currently incorporated into the Derby-compatible engine jar.
+- `settings.gradle` defines the Gradle projects. The engine is one project, `delosdb-engine`, compiled into one JPMS module, `org.apache.derby.engine`, as Derby compiles it: SQL, the kernel contracts and services, the store contracts, RawStore, heap and MVCC.
+- Inside the engine, ownership is by package. [gradle/static-analysis/delosdb-engine-package-boundaries.txt](../gradle/static-analysis/delosdb-engine-package-boundaries.txt) names the package groups (kernel contracts, store contracts, RawStore and heap, MVCC, services, SQL) and which groups each may use; `delosModuleDependencyBoundaryStaticAnalysis` fails on any other import. Storage code never imports SQL, and MVCC never imports RawStore or heap code.
+- `module-info.java` defines the JPMS identities and exports. The engine exports what Derby's engine exports.
+- [gradle/delosdb-runtime-artifacts.gradle](../gradle/delosdb-runtime-artifacts.gradle) owns the assembled and distributed jars. `derby.jar` contains the whole engine.
 - [gradle/testing/delos-test-suite-registry.tsv](../gradle/testing/delos-test-suite-registry.tsv) owns permanent test placement. Test provenance records distinguish inherited and Delos-authored proof.
 - Benchmarks are opt-in and can launch external engines/processes. Their timing results are not correctness proofs.
 
@@ -61,6 +75,24 @@ python3 tools/architecture/source_inventory.py \
 ```
 
 The inventory reports owner-to-owner imports, package cycles within each owner and imports from contract packages into implementation packages. It covers authored source only: it does not resolve generated, reflective or service-loader dependencies, and it is not a build gate. The current findings are in the dependency map in [REFERENCE-CODEBASE-STRUCTURE.md](design/REFERENCE-CODEBASE-STRUCTURE.md); the tool's own check is `python3 -B -m unittest discover -s tools/architecture`.
+
+## Change one component
+
+Each core component has an owner, a contract that any change must keep, and the tests that prove it. Run the focused proof before and after the change, then the broader suite.
+
+| Component | Owner | Contract to keep | Focused proof | Broader proof |
+|---|---|---|---|---|
+| Cost-based optimizer | `impl.sql.compile` (`OptimizerImpl`) | one optimizer authority, [OPTIMIZER-AUTHORITY.md](OPTIMIZER-AUTHORITY.md) | `delosFunctionalTests --tests '*MvccCardinalityCostAuthorityTest' --tests '*ExplainTest'` | `derbyLanguageTests` |
+| Heap page placement | `impl.store.access.heap`, `impl.store.raw.data` | page validity, rollback and recovery | `delosConcurrencyTests --tests '*HeapInsertLaneTest' --tests '*CachedPageValidityTest'`; `delosFunctionalTests --tests '*HeapSanityCheckerTest'` | `derbyStoreTests`, `delosRecoveryTests` |
+| B-tree indexes | `impl.store.access.btree` | Derby key order and latching | `delosFunctionalTests --tests '*BTreeDirectionalBoundaryScanTest'`; `delosConcurrencyTests --tests '*BTreeIndexConcurrencyArchitectureProofTest'` | `derbyStoreTests` |
+| MVCC visibility | `impl.store.access.mvcc`, snapshot checks in `impl.store.access.btree` | [MVCC-VISIBILITY-ALGORITHMS.md](MVCC-VISIBILITY-ALGORITHMS.md), [MVCC-SECONDARY-INDEX-VISIBILITY.md](design/MVCC-SECONDARY-INDEX-VISIBILITY.md) | `delosConcurrencyTests --tests '*DelosIsolationSpecificationTest' --tests '*HeapMvccIsolationDifferentialTest'` | `delosFunctionalTests` (with the heap/MVCC differential fuzz) |
+| MVCC uniqueness | `impl.store.access.mvcc` | [V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md](design/V1-RAWSTORE-MVCC-UNIQUE-CONSTRAINTS.md) | `delosFunctionalTests --tests '*MvccRawStoreUniqueConstraintTest' --tests '*MvccUniqueIndexKeyReuseTest'` | `delosFunctionalTests` |
+| Lock manager | `impl.services.locks` | Derby lock compatibility; fast paths are optional | `delosConcurrencyTests --tests '*ContainerIntentSharedFastPathTest' --tests '*RecordReadFastPathTest' --tests '*HeldIntentRegrantTest'` | `derbyStoreTests`, `delosConcurrencyTests` |
+| Cache | `impl.services.cache` | keep/release before reuse | `delosConcurrencyTests --tests '*ContainerCacheFastPinTest'` | `derbyStoreTests` |
+| Log, commit and recovery | `impl.store.raw.log`, `impl.store.raw.xact` | log record before page change; one log for heap and MVCC | `delosRecoveryTests` | `derbyStoreTests` |
+| Package boundaries | the package-boundary manifest | the allowed group imports | `delosModuleDependencyBoundaryStaticAnalysis` | `s0CloseoutVerification` |
+
+Test tasks belong to `:delosdb-tests` (for example `./gradlew :delosdb-tests:delosConcurrencyTests --tests '*HeapInsertLaneTest'`); the static checks are root tasks. A few tests fail on main today; compare against a run of the unchanged tree rather than expecting zero failures.
 
 ## A small fork exercise
 
