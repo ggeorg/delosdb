@@ -19,7 +19,6 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -90,7 +89,7 @@ final class MvccRawStoreRuntime {
     private final Set<ContainerKey> gen2A1Tables = ConcurrentHashMap.newKeySet();
     private final Map<ContainerKey, ReentrantReadWriteLock> tableMaintenanceBoundaries =
             new ConcurrentHashMap<>();
-    private final Map<ContainerKey, TableWriteState> tableWriteStates =
+    private final Map<ContainerKey, MvccTableWriteState> tableWriteStates =
             new ConcurrentHashMap<>();
     private final Set<Long> activeTransactionIds = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -500,12 +499,12 @@ final class MvccRawStoreRuntime {
         }
     }
 
-    SnapshotLease openSnapshotLease() {
-        SnapshotLease lease = tryClaimCurrentSnapshotLeaseSlot();
+    MvccSnapshotLease openSnapshotLease() {
+        MvccSnapshotLease lease = tryClaimCurrentSnapshotLeaseSlot();
         return lease != null ? lease : openLockedSnapshotLease();
     }
 
-    private SnapshotLease openLockedSnapshotLease() {
+    private MvccSnapshotLease openLockedSnapshotLease() {
         commitPublicationLock.lock();
         try {
             long sequence = publishedHighWater.get();
@@ -515,16 +514,16 @@ final class MvccRawStoreRuntime {
         }
     }
 
-    SnapshotLease retainSnapshot(long sequence) {
+    MvccSnapshotLease retainSnapshot(long sequence) {
         if (sequence < 0L) {
             throw new IllegalArgumentException(
                     "RawStore MVCC retained snapshot must be committed: " + sequence);
         }
-        SnapshotLease lease = tryClaimRetainedSnapshotLeaseSlot(sequence);
+        MvccSnapshotLease lease = tryClaimRetainedSnapshotLeaseSlot(sequence);
         return lease != null ? lease : retainLockedSnapshot(sequence);
     }
 
-    private SnapshotLease retainLockedSnapshot(long sequence) {
+    private MvccSnapshotLease retainLockedSnapshot(long sequence) {
         commitPublicationLock.lock();
         try {
             long published = publishedHighWater.get();
@@ -560,10 +559,10 @@ final class MvccRawStoreRuntime {
         return new TableReadBoundary(readLock);
     }
 
-    TableWriteState tableWriteState(MvccRawStoreTable.Descriptor table) {
+    MvccTableWriteState tableWriteState(MvccRawStoreTable.Descriptor table) {
         return tableWriteStates.computeIfAbsent(
                 table.metadataContainer(),
-                ignored -> new TableWriteState());
+                ignored -> new MvccTableWriteState());
     }
 
     TableMaintenanceBoundary enterVacuum(MvccRawStoreTable.Descriptor table) {
@@ -572,13 +571,13 @@ final class MvccRawStoreRuntime {
         return new TableMaintenanceBoundary(writeLock);
     }
 
-    private SnapshotLease registerLockedSnapshotLease(long sequence) {
+    private MvccSnapshotLease registerLockedSnapshotLease(long sequence) {
         long leaseId = nextSnapshotLeaseId.getAndIncrement();
         retainedSnapshotSequences.put(leaseId, sequence);
-        return SnapshotLease.locked(this, leaseId, sequence);
+        return MvccSnapshotLease.locked(this, leaseId, sequence);
     }
 
-    private SnapshotLease tryClaimCurrentSnapshotLeaseSlot() {
+    private MvccSnapshotLease tryClaimCurrentSnapshotLeaseSlot() {
         AtomicLongArray slots = snapshotLeaseSlots;
         int slot = claimSnapshotLeaseSlot(slots);
         if (slot < 0) {
@@ -587,7 +586,7 @@ final class MvccRawStoreRuntime {
         boolean opened = false;
         try {
             long sequence = publishedHighWater.get();
-            SnapshotLease lease = SnapshotLease.slotted(this, slot, sequence);
+            MvccSnapshotLease lease = MvccSnapshotLease.slotted(this, slot, sequence);
             slots.set(slot, sequence);
             opened = true;
             return lease;
@@ -598,7 +597,7 @@ final class MvccRawStoreRuntime {
         }
     }
 
-    private SnapshotLease tryClaimRetainedSnapshotLeaseSlot(long sequence) {
+    private MvccSnapshotLease tryClaimRetainedSnapshotLeaseSlot(long sequence) {
         AtomicLongArray slots = snapshotLeaseSlots;
         int slot = claimSnapshotLeaseSlot(slots);
         if (slot < 0) {
@@ -612,7 +611,7 @@ final class MvccRawStoreRuntime {
                         "RawStore MVCC retained snapshot is ahead of publication: "
                                 + sequence + " > " + published);
             }
-            SnapshotLease lease = SnapshotLease.slotted(this, slot, sequence);
+            MvccSnapshotLease lease = MvccSnapshotLease.slotted(this, slot, sequence);
             slots.set(slot, sequence);
             opened = true;
             return lease;
@@ -657,7 +656,7 @@ final class MvccRawStoreRuntime {
         }
     }
 
-    private void closeSnapshotLease(long leaseId, int slot, long sequence) {
+    void closeSnapshotLease(long leaseId, int slot, long sequence) {
         if (slot >= 0) {
             if (!snapshotLeaseSlots.compareAndSet(slot, sequence, FREE_SNAPSHOT_LEASE_SLOT)) {
                 throw new IllegalStateException(
@@ -956,50 +955,6 @@ final class MvccRawStoreRuntime {
         }
     }
 
-    static final class SnapshotLease implements AutoCloseable {
-        private final MvccRawStoreRuntime runtime;
-        private final long leaseId;
-        private final int slot;
-        private final long sequence;
-        private final AtomicBoolean closed = new AtomicBoolean();
-
-        private SnapshotLease(
-                MvccRawStoreRuntime runtime,
-                long leaseId,
-                int slot,
-                long sequence) {
-            this.runtime = runtime;
-            this.leaseId = leaseId;
-            this.slot = slot;
-            this.sequence = sequence;
-        }
-
-        private static SnapshotLease locked(
-                MvccRawStoreRuntime runtime,
-                long leaseId,
-                long sequence) {
-            return new SnapshotLease(runtime, leaseId, -1, sequence);
-        }
-
-        private static SnapshotLease slotted(
-                MvccRawStoreRuntime runtime,
-                int slot,
-                long sequence) {
-            return new SnapshotLease(runtime, 0L, slot, sequence);
-        }
-
-        long sequence() {
-            return sequence;
-        }
-
-        @Override
-        public void close() {
-            if (closed.compareAndSet(false, true)) {
-                runtime.closeSnapshotLease(leaseId, slot, sequence);
-            }
-        }
-    }
-
     static final class TableReadBoundary implements AutoCloseable {
         private final ReentrantReadWriteLock.ReadLock readLock;
         private boolean closed;
@@ -1014,71 +969,6 @@ final class MvccRawStoreRuntime {
                 closed = true;
                 readLock.unlock();
             }
-        }
-    }
-
-    /**
-     * Writer activity on one table. A snapshot read of a secondary index
-     * checks each entry against the base row unless no transaction has
-     * written the table since the snapshot: then an entry is visible exactly
-     * when it is not marked deleted. Purging deleted index entries requires
-     * that no other transaction writes the table. Transactions register
-     * before they open the table or its indexes for update, and end after
-     * their commit is published or their rollback is complete.
-     */
-    static final class TableWriteState {
-        /** Epoch value meaning the table changed after the snapshot. */
-        static final long CHANGED = -1L;
-
-        private final AtomicInteger activeWriters = new AtomicInteger();
-        private final AtomicLong epoch = new AtomicLong();
-        private final AtomicLong lastCommitSequence = new AtomicLong();
-
-        private TableWriteState() {
-        }
-
-        void beginWrite() {
-            activeWriters.incrementAndGet();
-            epoch.incrementAndGet();
-        }
-
-        /** Records a writer's commit sequence before its commit is published. */
-        void recordCommit(long commitSequence) {
-            lastCommitSequence.accumulateAndGet(commitSequence, Math::max);
-        }
-
-        void endWrite() {
-            epoch.incrementAndGet();
-            activeWriters.decrementAndGet();
-        }
-
-        /**
-         * The current epoch if no transaction is writing the table and every
-         * committed write is visible at {@code snapshotSequence}, else
-         * {@link #CHANGED}.
-         */
-        long unchangedEpoch(long snapshotSequence) {
-            return quietEpoch(0, snapshotSequence);
-        }
-
-        /**
-         * The current epoch if {@code ownWriters} transactions, the caller's
-         * own, are all that write the table and no write committed after
-         * {@code committedThrough}, else {@link #CHANGED}.
-         */
-        long quietEpoch(int ownWriters, long committedThrough) {
-            long before = epoch.get();
-            if (activeWriters.get() != ownWriters
-                    || lastCommitSequence.get() > committedThrough
-                    || epoch.get() != before) {
-                return CHANGED;
-            }
-            return before;
-        }
-
-        /** Whether no writer has begun or ended since {@code unchangedEpoch}. */
-        boolean unchangedSince(long unchangedEpoch) {
-            return unchangedEpoch != CHANGED && epoch.get() == unchangedEpoch;
         }
     }
 

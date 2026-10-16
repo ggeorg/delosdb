@@ -51,12 +51,12 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             new LinkedHashMap<>();
     private final Map<ContainerKey, MvccRawStoreRuntime.TableMaintenanceBoundary> vacuumBoundaries =
             new LinkedHashMap<>();
-    private final Map<ContainerKey, MvccRawStoreRuntime.TableWriteState> writtenTables =
+    private final Map<ContainerKey, MvccTableWriteState> writtenTables =
             new LinkedHashMap<>();
     private final Set<Long> reclaimedTransactionStatuses = new HashSet<>();
     private long transactionId;
     private long snapshotSequence = UNCAPTURED_SNAPSHOT;
-    private MvccRawStoreRuntime.SnapshotLease snapshotLease;
+    private MvccSnapshotLease snapshotLease;
     private long reservedCommitSequence;
     private boolean publicationLockHeld;
     private boolean transactionStatusCommitStaged;
@@ -134,7 +134,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
      */
     void beforeOpenForUpdate(MvccRawStoreTable.Descriptor table) {
         writtenTables.computeIfAbsent(table.metadataContainer(), ignored -> {
-            MvccRawStoreRuntime.TableWriteState state = runtime.tableWriteState(table);
+            MvccTableWriteState state = runtime.tableWriteState(table);
             state.beginWrite();
             return state;
         });
@@ -430,7 +430,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         return snapshotSequence;
     }
 
-    MvccRawStoreRuntime.SnapshotLease retainSnapshotLease() {
+    MvccSnapshotLease retainSnapshotLease() {
         return runtime.retainSnapshot(snapshotSequence());
     }
 
@@ -559,7 +559,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             if (transactionStatusCommitStaged) {
                 runtime.transactionStatuses.publish(transactionId, reservedCommitSequence);
             }
-            for (MvccRawStoreRuntime.TableWriteState written : writtenTables.values()) {
+            for (MvccTableWriteState written : writtenTables.values()) {
                 written.recordCommit(reservedCommitSequence);
             }
             // The RawStore commit is durable at this point, but the commit
@@ -875,7 +875,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             boundary.close();
         }
         vacuumBoundaries.clear();
-        for (MvccRawStoreRuntime.TableWriteState written : writtenTables.values()) {
+        for (MvccTableWriteState written : writtenTables.values()) {
             written.endWrite();
         }
         writtenTables.clear();

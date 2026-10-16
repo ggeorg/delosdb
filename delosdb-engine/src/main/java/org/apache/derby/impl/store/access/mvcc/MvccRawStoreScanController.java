@@ -38,7 +38,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private final MvccRawStoreVersionRows.FetchProjection versionProjection;
     private final MvccConglomerate.MvccDynamicCompiledOpenConglomInfo compiledInfo;
     private final long snapshotSequence;
-    private final MvccRawStoreRuntime.SnapshotLease heldSnapshotLease;
+    private final MvccSnapshotLease heldSnapshotLease;
     private final boolean readCommittedUpdateRecheck;
     private Qualifier[][] qualifiers;
     private List<MvccRawStoreTable.VisibleRow> rows;

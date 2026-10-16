@@ -47,7 +47,7 @@ final class MvccRawStoreConglomerateController
             "delosdb.experimental.mvccBaseFetchPagePrefetch";
 
     private final boolean forUpdate;
-    private final MvccRawStoreRuntime.SnapshotLease statementSnapshotLease;
+    private final MvccSnapshotLease statementSnapshotLease;
     private final long statementSnapshotSequence;
     // IndexRowToBaseRow owns this controller for the statement. Keep the
     // read-only RawStore lookup resources at that same lifetime instead of
@@ -64,8 +64,8 @@ final class MvccRawStoreConglomerateController
     private MvccRawStoreTable.DirectoryRecord[] prefetchedDirectories;
     private int prefetchedDirectoryCount;
     private boolean readCommittedUpdateRecheck;
-    private MvccRawStoreRuntime.TableWriteState tableWrites;
-    private long snapshotIndexUnchangedEpoch = MvccRawStoreRuntime.TableWriteState.CHANGED;
+    private MvccTableWriteState tableWrites;
+    private long snapshotIndexUnchangedEpoch = MvccTableWriteState.CHANGED;
     private boolean closed;
 
     MvccRawStoreConglomerateController(
@@ -315,7 +315,7 @@ final class MvccRawStoreConglomerateController
         MvccRawStoreTransactionContext context = runtime.context(transactionManager, rawTransaction);
         tableWrites = runtime.tableWriteState(table);
         long epoch = tableWrites.quietEpoch(context.writesTable(table) ? 1 : 0, Long.MAX_VALUE);
-        return epoch == MvccRawStoreRuntime.TableWriteState.CHANGED ? NO_RECLAMATION : epoch;
+        return epoch == MvccTableWriteState.CHANGED ? NO_RECLAMATION : epoch;
     }
 
     @Override

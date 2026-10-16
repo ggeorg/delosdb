@@ -231,8 +231,10 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStor
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionRows.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLease.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStorageDiagnostics.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccStoreCostController.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccTableWriteState.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccTransactionStatusCommitDiagnostics.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/sort/SortMemoryPolicy.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/ArchivedBeforeImage.java
