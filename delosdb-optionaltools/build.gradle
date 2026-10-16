@@ -40,11 +40,10 @@ dependencies {
     compileOnly externalModulePath
 
     // Optional dump tools compile against inherited Derby raw-store contracts
-    // and implementation helpers patched into org.apache.derby.engine.
+    // and implementation helpers, which are in the engine's classes.
     // DataValueDescriptor's inherited Store* interfaces are owned by
-    // delosdb-derby-store-api, which is already a patch-module input.
+    // delosdb-derby-store-api, which is a patch-module input.
     enginePatchModule project(':delosdb-derby-store-api')
-    enginePatchModule project(':delosdb-storage-derby')
 }
 
 def compileModulePathFiles = objects.fileCollection().from(configurations.compileClasspath)

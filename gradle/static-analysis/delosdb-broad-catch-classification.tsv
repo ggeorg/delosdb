@@ -287,72 +287,72 @@ delosdb-server/src/main/java/org/apache/derby/impl/drda/ProtocolTestAdapter.java
 delosdb-server/src/main/java/org/apache/derby/impl/drda/ProtocolTestAdapter.java	ProtocolTestAdapter$VirtualThreadFairnessProbe	audit	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
 delosdb-server/src/main/java/org/apache/derby/impl/drda/ReEncodedInputStream.java	ReEncodedInputStream$CleanupState	closeResource	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
 delosdb-server/src/main/java/org/apache/derby/impl/drda/Session.java	Session	initTrace	Exception	1	REQUIRED_BOUNDARY_CATCH	DRDA_PROTOCOL_OR_ADMIN_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java	RAMAccessManager	stop	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	abort	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	commit	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	commitNoSync	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	destroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAbortFailed	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAfterAbort	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAfterDestroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyBeforeAbort	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyBeforeDestroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyCommitFailed	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScanInfo.java	BTreeScanInfo	<init>	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/BranchControlRow.java	BranchControlRow	toString	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java	ControlRow	toString	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/ConglomerateUtil.java	ConglomerateUtil	debugPage	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPage	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPage	Throwable	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPageAndRepositionScan	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	backupAndEnableLogArchiveMode	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyFile	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyFile	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDelete	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDelete	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privExists	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privExists	Exception	2	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privGetCanonicalPath	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privGetCanonicalPath	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privIsDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privList	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privRemoveDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privRenameTo	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	backupDataFiles	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	boot	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	fileToRemove	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	findMaxContainerId	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	freezePersistentStore	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	getContainerNames	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	getContainerPath	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	postRecovery	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	registerRawStoreIoMetrics	IOException | RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	releaseJBMSLockOnDB	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeDroppedContainerFileStubs	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeStubs	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeTempDirectory	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	run	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_conglomid_print	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_conglomid_to_containerid	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_containerid_to_conglomid	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java	D_StoredPage	diag_detail	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/EncryptOrDecryptData.java	EncryptOrDecryptData	encryptOrDecryptAllContainers	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java	RAFContainer	openContainer	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java	RAFContainer	reopenContainer	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java	RAFContainer4	recoverContainerAfterInterrupt	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privCopyFile	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privCopyFile	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privList	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privList	Exception	2	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	recover	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	runBooleanAction	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java	Xact	toString	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/raw/xact/XactFactory.java	XactFactory	blockBackupBlockingOperations	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/master/MasterController.java	MasterController	handleExceptions	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/master/MasterController.java	MasterController	setupConnection	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java	SlaveController	setupConnection	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
-delosdb-storage-derby/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java	SlaveController$SlaveLogReceiverThread	run	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMAccessManager.java	RAMAccessManager	stop	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	abort	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	commit	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	commitNoSync	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	destroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAbortFailed	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAfterAbort	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyAfterDestroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyBeforeAbort	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyBeforeDestroy	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransaction.java	RAMTransaction	notifyCommitFailed	RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScanInfo.java	BTreeScanInfo	<init>	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BranchControlRow.java	BranchControlRow	toString	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/ControlRow.java	ControlRow	toString	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/conglomerate/ConglomerateUtil.java	ConglomerateUtil	debugPage	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPage	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPage	Throwable	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/conglomerate/OpenConglomerate.java	OpenConglomerate	latchPageAndRepositionScan	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	backupAndEnableLogArchiveMode	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyFile	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privCopyFile	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDelete	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privDelete	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privExists	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privExists	Exception	2	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privGetCanonicalPath	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privGetCanonicalPath	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privIsDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privList	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privRemoveDirectory	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/RawStore.java	RawStore	privRenameTo	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	backupDataFiles	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	boot	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	fileToRemove	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	findMaxContainerId	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	freezePersistentStore	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	getContainerNames	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	getContainerPath	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	postRecovery	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	registerRawStoreIoMetrics	IOException | RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	releaseJBMSLockOnDB	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeDroppedContainerFileStubs	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeStubs	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	removeTempDirectory	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/BaseDataFileFactory.java	BaseDataFileFactory	run	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_conglomid_print	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_conglomid_to_containerid	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/D_DiagnosticUtil.java	D_DiagnosticUtil	diag_containerid_to_conglomid	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/D_StoredPage.java	D_StoredPage	diag_detail	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/EncryptOrDecryptData.java	EncryptOrDecryptData	encryptOrDecryptAllContainers	Throwable	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java	RAFContainer	openContainer	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer.java	RAFContainer	reopenContainer	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/data/RAFContainer4.java	RAFContainer4	recoverContainerAfterInterrupt	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privCopyFile	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privCopyFile	Exception	2	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privList	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	privList	Exception	2	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	recover	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/log/LogToFile.java	LogToFile	runBooleanAction	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/Xact.java	Xact	toString	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/raw/xact/XactFactory.java	XactFactory	blockBackupBlockingOperations	RuntimeException	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW
+delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/master/MasterController.java	MasterController	handleExceptions	Exception	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
+delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/master/MasterController.java	MasterController	setupConnection	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java	SlaveController	setupConnection	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
+delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java	SlaveController$SlaveLogReceiverThread	run	Exception	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	abortChild	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	abortRaw	Throwable	1	REQUIRED_BOUNDARY_CATCH	STORAGE_OR_TRANSACTION_BOUNDARY
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java	MvccRawStoreDatabaseMetadata	ensureInitialized	StandardException | RuntimeException | Error	1	REQUIRED_BOUNDARY_CATCH	FAILURE_CLEANUP_AND_RETHROW

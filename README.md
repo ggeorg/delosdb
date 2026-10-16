@@ -157,11 +157,10 @@ See [`docs/BUILDING.md`](docs/BUILDING.md) and
 
 | Area | Responsibility |
 |---|---|
-| `delosdb-engine` | SQL compilation, execution, catalogs, JDBC engine integration, and the RawStore-backed MVCC access method (`impl.store.access.mvcc`) |
+| `delosdb-engine` | SQL compilation, execution, catalogs, JDBC engine integration; the inherited heap and RawStore implementation (`impl.store`); and the RawStore-backed MVCC access method (`impl.store.access.mvcc`) |
 | `delosdb-client` | Derby-compatible network client |
 | `delosdb-server` | Derby-compatible DRDA server |
 | `delosdb-derby-store-api` | neutral Derby storage contracts shared by access methods |
-| `delosdb-storage-derby` | inherited heap and RawStore implementation |
 | `delosdb-tools` | command-line and administrative tools |
 | `delosdb-tests` | inherited compatibility and DelosDB integration tests |
 | `benchmarks` | opt-in reproducible benchmark and validation evidence |

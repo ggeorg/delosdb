@@ -38,11 +38,6 @@ configurations {
         canBeResolved = true
         transitive = false
     }
-    derbyRuntimePatchArtifacts {
-        canBeConsumed = false
-        canBeResolved = true
-        transitive = false
-    }
     derbyEngineClasses {
         canBeConsumed = true
         canBeResolved = false
@@ -59,14 +54,12 @@ dependencies {
 
     enginePatch project(':delosdb-derby-store-api')
 
-    // Runtime-only Derby compatibility payloads. These are copied into the
-    // Derby-compatible derby.jar from declared outgoing artifacts instead of
-    // reaching directly into another project's build/classes directories.
-    derbyRuntimePatchArtifacts project(path: ':delosdb-storage-derby', configuration: 'derbyRuntimePatchElements')
+    // Unit tests run on the class path against the compiled engine module and
+    // the store contracts it is patched with.
+    testImplementation project(':delosdb-derby-store-api')
 }
 
 def enginePatchFiles = objects.fileCollection().from(configurations.enginePatch)
-def derbyRuntimePatchArtifactFiles = objects.fileCollection().from(configurations.derbyRuntimePatchArtifacts)
 
 sourceSets {
     main {
@@ -129,7 +122,6 @@ def generatedOdbcResourceDir = layout.buildDirectory.dir('generated/resources/od
 tasks.named('compileJava', JavaCompile) {
     dependsOn tasks.named('generateSqlParser')
     inputs.files(enginePatchFiles).withPropertyName('enginePatch')
-    inputs.files(derbyRuntimePatchArtifactFiles).withPropertyName('derbyRuntimePatchArtifacts')
     destinationDirectory.set(moduleClassDir)
     options.release = rootProject.ext.javaRelease
     options.encoding = 'UTF-8'
@@ -137,10 +129,8 @@ tasks.named('compileJava', JavaCompile) {
     options.warnings = true
     options.compilerArgs.add('-Xlint:deprecation')
     doFirst {
-        def compilePatchFiles = objects.fileCollection().from(
-                enginePatchFiles, derbyRuntimePatchArtifactFiles)
         options.compilerArgs.addAll(['--patch-module',
-                "${moduleName}=${compilePatchFiles.asPath}"])
+                "${moduleName}=${enginePatchFiles.asPath}"])
     }
 }
 
@@ -229,10 +219,7 @@ tasks.named('jar', Jar) {
 // Derby runtime resources.
 tasks.register('derbyJar', Jar) {
     dependsOn tasks.named('compileJava'), tasks.named('processResources'), tasks.named('compileClassSizeCatalog'),
-            ':delosdb-derby-store-api:compileDerbyStoreApi',
-            ':delosdb-storage-derby:compileLegacyDerbyStorage',
-            ':delosdb-storage-derby:processResources'
-    dependsOn derbyRuntimePatchArtifactFiles
+            ':delosdb-derby-store-api:compileDerbyStoreApi'
     archiveFileName = engineArchiveName
     destinationDirectory = rootProject.layout.buildDirectory.dir('libs')
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -245,16 +232,6 @@ tasks.register('derbyJar', Jar) {
     }) {
         include 'org/apache/derby/iapi/store/types/**'
         include 'org/apache/derby/iapi/store/**'
-        exclude 'META-INF/MANIFEST.MF'
-        exclude 'module-info.class'
-    }
-    from({
-        derbyRuntimePatchArtifactFiles.collect {
-            engineBuildServices.archiveOperations.zipTree(it)
-        }
-    }) {
-        include 'org/apache/derby/impl/store/**'
-        include 'META-INF/services/org.apache.derby.iapi.store.types.StoreRowLocationFactory'
         exclude 'META-INF/MANIFEST.MF'
         exclude 'module-info.class'
     }
@@ -273,6 +250,24 @@ tasks.named('assemble') {
     dependsOn tasks.named('derbyJar')
 }
 
+tasks.named('compileTestJava', JavaCompile) {
+    modularity.inferModulePath = false
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('test', Test) {
+    failOnNoDiscoveredTests = false
+}
+
+tasks.register('runAccessMethodTransactionLifecycleTest', JavaExec) {
+    group = 'verification'
+    description = 'Runs the neutral access-method transaction lifecycle contract test.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'org.apache.derby.impl.store.access.AccessMethodTransactionLifecycleTest'
+}
+
 tasks.named('check') {
-    dependsOn tasks.named('classes')
+    dependsOn tasks.named('classes'), tasks.named('runAccessMethodTransactionLifecycleTest')
 }

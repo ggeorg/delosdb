@@ -96,8 +96,8 @@ The existing module identities remain authoritative until each migration is veri
 | derby-store-api | `delosdb-store-contracts` | Preserve neutral page/access/transaction/type contracts and their public binary names |
 | engine service implementations | packages of the engine (see the consolidation below; `delosdb-kernel` is withdrawn) | Remove SQL implementation dependencies; classify storage-specific lock/cache fast paths rather than assuming they are generic |
 | engine SQL/catalog/types/JDBC | `delosdb-sql` | Keep compiler and executor together initially; extract neutral models before separate compiler/executor modules |
-| storage-derby's `impl.store.raw` | `delosdb-rawstore` | Preserve one persistence authority and lifecycle; separate cross-access helpers into real contracts |
-| storage-derby's `impl.store.access` | `delosdb-access-heap` | Remove direct implementation coupling to helpers such as `RawStorePreparedRow` and `HeapPageReadImageAccess`; retain transaction integration |
+| storage-derby's `impl.store.raw` | the engine's `impl.store.raw` packages (merged 2026-10-15) | Preserve one persistence authority and lifecycle; separate cross-access helpers into real contracts |
+| storage-derby's `impl.store.access` | the engine's `impl.store.access` packages (merged 2026-10-15) | Remove direct implementation coupling to helpers such as `RawStorePreparedRow` and `HeapPageReadImageAccess`; retain transaction integration |
 | storage-mvcc | merged into the engine as `impl.store.access.mvcc` (2026-10-15) | Preserve peer access-method status, provider discovery and shared RawStore ownership |
 | client/server | transport owners with clear DRDA names | Preserve wire protocol, security, module exports and independent deployment |
 | tests and benchmark support | component-local tests, shared compatibility/integration tests, dedicated benchmarks | Preserve suite registry, adaptation provenance, crash-worker classpaths and external-engine isolation |
@@ -151,7 +151,7 @@ The lock manager now reaches neither SQL nor the store contracts: lock-object na
 
 ## Engine build consolidation (proposed)
 
-Status: design, 2026-10-15. The package-boundary check and the `storage-mvcc` merge are done.
+Status: design, 2026-10-15. The package-boundary check and the `storage-mvcc` and `storage-derby` merges are done.
 
 **Why.** Derby 10.17.1.0 compiles SQL, transactions, locks, access methods and RawStore together into one JPMS module, `org.apache.derby.engine`. DelosDB keeps `derby-store-api`, `storage-derby` and `storage-mvcc` as separate Gradle projects and then patches their classes into that same module: `derby-store-api` through `enginePatch`, the two storage projects through `derbyRuntimePatchElements`, all passed to `--patch-module` when the engine compiles. JPMS cannot isolate packages inside one module, so these projects add build concepts (patch configurations, per-project class directories, test-support patch lists) without runtime isolation. What they do give is compile-time enforcement: each storage project compiles only against `commons`, `runtime-api`, `annotations` and `derby-store-api`.
 
@@ -188,9 +188,10 @@ The current forbidden project edges (engine → MVCC, MVCC → engine implementa
 **Order.**
 1. Add the package-boundary check and its manifest; it passes on today's tree. Done: `gradle/static-analysis/delosdb-engine-package-boundaries.txt`, checked by `delosModuleDependencyBoundaryStaticAnalysis`.
 2. Merge `storage-mvcc` into the engine project and retire `delosdb-storage-mvcc.jar`. Done: the 32 classes and every service file in `derby.jar` are byte-identical before and after; only the generated message files differ, by their timestamp header.
-3. Merge `storage-derby`, then `derby-store-api`, one commit each, each with its inventories and the acceptance checks. `derby-store-api` goes last: the engine's `module-info` provides heap and MVCC classes, so the engine compiles with the storage classes patched in, and those compile against `derby-store-api`. Moving it into the engine first would make each storage project and the engine need the other to compile.
-4. Update the module documents and the target manifest.
-5. Then list `runtime-api`'s consumers and decide whether it stays a separate module.
+3. Merge `storage-derby`. Done, with the same byte-identical `derby.jar` result; its one unit test, `AccessMethodTransactionLifecycleTest`, now runs from the engine project's tests.
+4. Merge `derby-store-api`, with its inventories and the acceptance checks. It goes last: the engine's `module-info` provides heap and MVCC classes, so the engine compiles with the storage classes patched in, and those compile against `derby-store-api`. Moving it into the engine first would make each storage project and the engine need the other to compile.
+5. Update the module documents and the target manifest.
+6. Then list `runtime-api`'s consumers and decide whether it stays a separate module.
 
 ## Core query and storage dependency map
 
@@ -203,8 +204,8 @@ Snapshot: `e9099f63`. The inventory command above regenerates the evidence. It a
 | Compile: parse, bind, optimize, generate | engine, `impl.sql`, `impl.sql.compile`, `impl.services.bytecode.classfile` | `GenericStatement`, `OptimizerImpl`, `ClassFileJava`; the parser is generated from `sqlgrammar.jj` | generated activation class |
 | Execute | engine, `impl.sql.execute`, `impl.sql.conn` | `BaseActivation`, `InsertResultSet`, `IndexChanger`, `GenericLanguageConnectionContext` | store contracts |
 | Store contracts | derby-store-api, `iapi.store.access`, `iapi.store.raw` | `TransactionController`, `ConglomerateController` | access method chosen by conglomerate factory |
-| Access methods | storage-derby, `impl.store.access{,.heap,.btree}`; engine, `impl.store.access.mvcc` | `RAMTransaction`, `HeapController`, `BTreeController`, `MvccRawStoreRuntime` | RawStore contracts |
-| RawStore | storage-derby, `impl.store.raw.{xact,data,log}` | `Xact`, `FileContainer`, `StoredPage`, `FileLogger`, `LogToFile` | files and the log |
+| Access methods | engine, `impl.store.access{,.heap,.btree,.mvcc}` | `RAMTransaction`, `HeapController`, `BTreeController`, `MvccRawStoreRuntime` | RawStore contracts |
+| RawStore | engine, `impl.store.raw.{xact,data,log}` | `Xact`, `FileContainer`, `StoredPage`, `FileLogger`, `LogToFile` | files and the log |
 
 Findings:
 

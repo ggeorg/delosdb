@@ -8,7 +8,6 @@ delosdb-runtime-api
 delosdb-annotations
 delosdb-spi
 delosdb-derby-store-api
-delosdb-storage-derby
 delosdb-search-lucene
 delosdb-engine
 delosdb-client
@@ -31,12 +30,14 @@ delosdb-storage-api
 delosdb-storage-io
 delosdb-storage-bridge
 delosdb-storage-mvcc
+delosdb-storage-derby
 
 [retired-artifacts]
 delosdb-storage-api.jar
 delosdb-storage-io.jar
 delosdb-storage-bridge.jar
 delosdb-storage-mvcc.jar
+delosdb-storage-derby.jar
 
 [required-provider-artifacts]
 delosdb-search-lucene.jar
@@ -45,9 +46,7 @@ delosdb-search-lucene.jar
 delosdb-search-lucene.jar
 
 [build-only-artifacts]
-delosdb-storage-derby.jar
 
 [forbidden-production-edges]
 delosdb-engine -> delosdb-search-lucene
 delosdb-search-lucene -> delosdb-engine
-delosdb-storage-derby -> delosdb-search-lucene

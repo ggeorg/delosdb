@@ -356,7 +356,6 @@ dependencies {
     testImplementation project(':delosdb-optionaltools')
     testImplementation project(':delosdb-runner')
     testImplementation project(':delosdb-server')
-    testImplementation project(':delosdb-storage-derby')
     testImplementation project(':delosdb-tools')
 
     testCompileOnly rootProject.files('tools/java/junit.jar')

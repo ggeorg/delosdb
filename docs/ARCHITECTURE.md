@@ -115,8 +115,7 @@ Core production ownership is separated as follows:
 | `delosdb-runtime-api` | neutral runtime-facing APIs |
 | `delosdb-spi` | provider-neutral external-index contracts |
 | `delosdb-derby-store-api` | neutral storage/access-method contracts |
-| `delosdb-storage-derby` | inherited heap and RawStore implementation |
-| `delosdb-engine` | SQL, catalogs, execution, embedded JDBC; MVCC provider and semantics in `impl.store.access.mvcc` |
+| `delosdb-engine` | SQL, catalogs, execution, embedded JDBC; inherited heap and RawStore in `impl.store`; MVCC provider and semantics in `impl.store.access.mvcc` |
 | `delosdb-client` | DRDA client |
 | `delosdb-server` | DRDA server |
 
