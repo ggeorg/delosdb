@@ -13,6 +13,8 @@ package org.apache.derby.impl.store.access.btree.index;
 import java.util.ServiceLoader;
 
 import org.apache.derby.iapi.store.access.conglomerate.IndexDefinitionSupport;
+import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
+import org.apache.derby.shared.common.error.StandardException;
 
 /** Finds the engine's index definition support for B2I conglomerates. */
 final class IndexDefinitions {
@@ -21,8 +23,20 @@ final class IndexDefinitions {
     private IndexDefinitions() {
     }
 
+    /**
+     * The base-table columns of the index stored in {@code containerId}, or
+     * null when no provider is present or the dictionary does not describe it.
+     */
+    static IndexDefinitionSupport.IndexColumns columns(
+            TransactionManager xactManager, long containerId) throws StandardException {
+        IndexDefinitionSupport current = support();
+        return current == null
+                ? null
+                : current.indexColumns(xactManager.findConglomid(containerId));
+    }
+
     /** @return the engine's support, or null if no provider is present */
-    static IndexDefinitionSupport support() {
+    private static IndexDefinitionSupport support() {
         IndexDefinitionSupport current = support;
         if (current != null) {
             return current;
