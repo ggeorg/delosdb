@@ -1099,7 +1099,6 @@ bd53f6ff0a72447c48fc443ed807b2605ecf3dd122d70123058866fea0872589	delosdb-server/
 421ee6911b7de79932c49ed46c2f009e1d053f5b47b293e1d62a73b76a153c47	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/CacheableConglomerate.java
 32c3c6f122424c5663bf0590fae111b9e8dcc62abcc0384da1c282a9e3d2c38f	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RAMTransactionContext.java
 27f63f8f2ef1d0c4f72a76e1c3632f137827866abcfaf0b389d9c7fb48f1da25	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/RllRAMAccessManager.java
-748edffb162b090b0cba649fff89601cb1a12020e8999e8d6551560244252406	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeBranchRoutingSnapshots.java
 2230029d3437eaa2d84bcecadbd958f478263a77b6029c9403c8aaaf4ffb5fb0	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreePointReadDiagnostics.java
 3a4ba7367579b13835acae876e905fff31a03fc866298258a9c9fe081d3d173e	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeScanInfo.java
 d0681685613ff19167a25376ea82cdad047807d898f4be822a511fc106a22f5b	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/WaitError.java
@@ -1207,7 +1206,6 @@ dec4ad9f0f23b8f44cd91665d84e7a280d9b9d9bfa232734ed038b856a5cd796	delosdb-engine/
 ca61fca0e10deb96e5be9190139368271a0d11d1e316d08732326ea9a261c8ea	delosdb-engine/src/main/java/org/apache/derby/impl/store/replication/slave/SlaveController.java
 259cbde837f0e45e59f868078cab438c65eb97385d2e4e294598ed8b44cbd277	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreIndexedReadMetrics.java
 4141d078433cf91abdf47053cabf66e2d2b724e1196b6e4e3e83f1391e45943f	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndexPredicate.java
-a746cc13a2bc09b4c492d4fc9666fde540d59a111a3aad60aa007efbe52f87fb	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionReader.java
 4d3a539bb675ca690104a2edceb96d212f74f24e199bf97bc81ba7be4e393d30	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnostics.java
 c7bf13aed50b26c4b4308897e37d2ef6c7956844dd4bb21bfe1c26c610894913	delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/StorelessService.java
 22c9207af459325ddbfbfeda780b886f2a97d4079d2549440698edbb90e69137	delosdb-tools/src/main/java/org/apache/derby/iapi/tools/ToolUtils.java

@@ -198,6 +198,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/sql/execute/rts/XPLAINResultS
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineRowLocationServices.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreRowLocationBridge.java
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/storetypes/EngineStoreTypeSupport.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeBranchRoutingSnapshots.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeDeletedEntryReclaimer.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/BTreeReadSnapshots.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/btree/index/B2IBaseTable.java
@@ -230,6 +231,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStor
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionStatusMaterializer.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionStatuses.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVacuum.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionReader.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreVersionRows.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRowLocation.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccScanInfo.java
