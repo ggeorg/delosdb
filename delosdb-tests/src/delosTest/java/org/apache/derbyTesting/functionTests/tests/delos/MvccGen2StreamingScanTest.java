@@ -22,7 +22,7 @@ import java.util.TreeMap;
  * returns: the CURRENT image when it is visible, the archived predecessor
  * when it is not, and nothing for a visible tombstone. Streaming applies only
  * to non-holdable read-only scans, so every query here closes its cursor at
- * commit.
+ * commit, and the runtime statistics confirm which scan ran.
  */
 public final class MvccGen2StreamingScanTest extends MvccSqlTestSupport {
     private static final String GEN2_C1_PROPERTY =
@@ -116,8 +116,13 @@ public final class MvccGen2StreamingScanTest extends MvccSqlTestSupport {
 
     private static void assertEveryMode(Connection connection, Map<Integer, String> expected)
             throws Exception {
+        executeUpdate(connection, "call syscs_util.syscs_set_runtimestatistics(1)");
         for (ScanMode mode : ScanMode.values()) {
             assertEquals(mode.name(), expected, scan(connection, mode));
+            String statistics = runtimeStatistics(connection);
+            assertEquals(mode.name() + " scan type; statistics=" + statistics,
+                    mode != ScanMode.MATERIALIZED,
+                    statistics.contains("delos_mvcc_streaming"));
         }
     }
 

@@ -43,6 +43,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private Qualifier[][] qualifiers;
     private List<MvccRawStoreTable.VisibleRow> rows;
     private MvccRawStoreStreamingScan streamingScan;
+    private boolean streamingRead;
     private MvccRawStoreRuntime.TableReadBoundary streamingReadBoundary;
     private StoreDataValue[] streamingSingleRow;
     private StoreDataValue[][] streamingSingleGroup;
@@ -162,7 +163,8 @@ final class MvccRawStoreScanController implements ScanManager {
         ensureOpen();
         String scanType = coveringIndexScan
                 ? "delos_mvcc_rawstore_ordered_index_covering"
-                : orderedIndexScan ? "delos_mvcc_rawstore_ordered_index" : "delos_mvcc";
+                : orderedIndexScan ? "delos_mvcc_rawstore_ordered_index"
+                : streamingRead ? "delos_mvcc_streaming" : "delos_mvcc";
         return new MvccScanInfo(
                 scanType,
                 rowsVisited,
@@ -450,7 +452,8 @@ final class MvccRawStoreScanController implements ScanManager {
                 materialized = true;
             }
         }
-        if (!materialized) {
+        streamingRead = !materialized;
+        if (streamingRead) {
             openStreamingScan(context);
         }
         nextIndex = 0;
