@@ -234,7 +234,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
             MvccRawStoreTable.Descriptor table) throws StandardException {
         MvccRawStoreTable.Allocation allocation =
                 runtime.reserveInsertIdentifiers(rawTransaction, table);
-        if (!table.gen2A1()) {
+        if (MvccRawStoreIdentityHighWater.persisted(table)) {
             observeAllocatorReservation(
                     table,
                     allocation.rowId() + 1L,
@@ -246,7 +246,7 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
     long reserveVersionIdentifier(MvccRawStoreTable.Descriptor table)
             throws StandardException {
         long versionId = runtime.reserveVersionIdentifier(rawTransaction, table);
-        if (!table.gen2A1()) {
+        if (MvccRawStoreIdentityHighWater.persisted(table)) {
             observeAllocatorReservation(table, 0L, versionId + 1L);
         }
         return versionId;
@@ -259,8 +259,8 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         long tableId = table.metadataContainer().getContainerId();
         AllocatorReservation current = allocatorReservations.get(tableId);
         if (current == null) {
-            MvccRawStoreTable.AllocatorHighWater persisted =
-                    MvccRawStoreTable.readAllocatorHighWater(rawTransaction, table);
+            MvccRawStoreIdentityHighWater.Mark persisted =
+                    MvccRawStoreIdentityHighWater.read(rawTransaction, table);
             current = new AllocatorReservation(
                     table,
                     persisted.nextRowId(),
@@ -760,10 +760,11 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         ordered.sort(java.util.Comparator.comparingLong(
                 reservation -> reservation.table().metadataContainer().getContainerId()));
         for (AllocatorReservation reservation : ordered) {
-            if (isDropped(reservation.table()) || reservation.table().gen2A1()) {
+            if (isDropped(reservation.table())
+                    || !MvccRawStoreIdentityHighWater.persisted(reservation.table())) {
                 continue;
             }
-            MvccRawStoreTable.stageAllocatorHighWater(
+            MvccRawStoreIdentityHighWater.stage(
                     rawTransaction,
                     reservation.table(),
                     reservation.nextRowId(),

@@ -1643,7 +1643,7 @@ final class MvccRawStoreTable {
                     OVERFLOW_THRESHOLD);
             page.insertAtSlot(
                     Page.FIRST_SLOT_NUMBER + 1,
-                    allocatorRow(rawTransaction),
+                    MvccRawStoreIdentityHighWater.initialRow(rawTransaction),
                     null,
                     null,
                     insertFlags(page),
@@ -1688,16 +1688,6 @@ final class MvccRawStoreTable {
                 container.close();
             }
         }
-    }
-
-    private static Object[] allocatorRow(Transaction transaction) throws StandardException {
-        return new Object[] {
-                MvccRawStoreFormat.intValue(transaction, MvccRawStoreFormat.ALLOCATOR_KIND),
-                MvccRawStoreFormat.intValue(transaction, MvccRawStoreFormat.FORMAT_VERSION),
-                MvccRawStoreFormat.longValue(transaction, 1L),
-                MvccRawStoreFormat.longValue(transaction, 1L),
-                MvccRawStoreFormat.longValue(transaction, 0L)
-        };
     }
 
     private static Object[] versionRow(
@@ -1852,157 +1842,6 @@ final class MvccRawStoreTable {
         return pending;
     }
 
-    static AllocatorHighWater readAllocatorHighWater(
-            Transaction transaction,
-            Descriptor table) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            throw new IllegalStateException(
-                    "RawStore MVCC metadata container is absent: " + table.metadataContainer());
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            Object[] allocator = allocatorTemplate(transaction);
-            page.fetchFromSlot(
-                    null,
-                    Page.FIRST_SLOT_NUMBER + 1,
-                    allocator,
-                    null,
-                    false);
-            long nextRowId = MvccRawStoreFormat.longAt(
-                    allocator,
-                    MvccRawStoreFormat.ALLOCATOR_NEXT_ROW_ID);
-            long nextVersionId = MvccRawStoreFormat.longAt(
-                    allocator,
-                    MvccRawStoreFormat.ALLOCATOR_NEXT_VERSION_ID);
-            validateAllocator(nextRowId, nextVersionId);
-            return new AllocatorHighWater(nextRowId, nextVersionId);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-    }
-
-    static AllocatorHighWater reconstructGen2A1AllocatorHighWater(
-            Transaction transaction,
-            Descriptor table) throws StandardException {
-        if (!table.gen2A1()) {
-            throw new IllegalArgumentException(
-                    "allocator reconstruction is Gen2-A1 only");
-        }
-
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_READONLY);
-        if (container == null) {
-            throw new IllegalStateException(
-                    "RawStore MVCC metadata container is absent: "
-                            + table.metadataContainer());
-        }
-
-        long nextRowId = 1L;
-        long nextVersionId = 1L;
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 2
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    MvccRawStoreCurrentRows.CurrentRow current = MvccRawStoreCurrentRows.decode(
-                            transaction, table, page, slot);
-                    if (current == null) {
-                        continue;
-                    }
-                    if (current.rowId() == Long.MAX_VALUE
-                            || current.versionId() == Long.MAX_VALUE) {
-                        throw new IllegalStateException(
-                                "RawStore MVCC Gen2-A1 row/version identity is exhausted");
-                    }
-                    nextRowId = Math.max(nextRowId, current.rowId() + 1L);
-                    nextVersionId = Math.max(nextVersionId, current.versionId() + 1L);
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-            return new AllocatorHighWater(nextRowId, nextVersionId);
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-    }
-
-    static void stageAllocatorHighWater(
-            Transaction transaction,
-            Descriptor table,
-            long nextRowId,
-            long nextVersionId) throws StandardException {
-        validateAllocator(nextRowId, nextVersionId);
-        ContainerHandle container = transaction.openContainer(
-                table.metadataContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (container == null) {
-            throw new IllegalStateException(
-                    "RawStore MVCC metadata container is absent: " + table.metadataContainer());
-        }
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            int slot = Page.FIRST_SLOT_NUMBER + 1;
-            Object[] allocator = allocatorTemplate(transaction);
-            page.fetchFromSlot(null, slot, allocator, null, false);
-            long persistedRow = MvccRawStoreFormat.longAt(
-                    allocator,
-                    MvccRawStoreFormat.ALLOCATOR_NEXT_ROW_ID);
-            long persistedVersion = MvccRawStoreFormat.longAt(
-                    allocator,
-                    MvccRawStoreFormat.ALLOCATOR_NEXT_VERSION_ID);
-            if (nextRowId > persistedRow) {
-                page.updateFieldAtSlot(
-                        slot,
-                        MvccRawStoreFormat.ALLOCATOR_NEXT_ROW_ID,
-                        MvccRawStoreFormat.longValue(transaction, nextRowId),
-                        null);
-            }
-            if (nextVersionId > persistedVersion) {
-                page.updateFieldAtSlot(
-                        slot,
-                        MvccRawStoreFormat.ALLOCATOR_NEXT_VERSION_ID,
-                        MvccRawStoreFormat.longValue(transaction, nextVersionId),
-                        null);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-    }
-
-    private static void validateAllocator(long nextRowId, long nextVersionId) {
-        if (nextRowId <= 0L || nextVersionId <= 0L
-                || nextRowId == Long.MAX_VALUE || nextVersionId == Long.MAX_VALUE) {
-            throw new IllegalStateException(
-                    "RawStore MVCC logical identity allocator is invalid or exhausted: row="
-                            + nextRowId + ", version=" + nextVersionId);
-        }
-    }
-
     private static RecordHandle insertRow(
             Transaction transaction,
             ContainerKey key,
@@ -2146,16 +1985,6 @@ final class MvccRawStoreTable {
         }
     }
 
-    private static Object[] allocatorTemplate(Transaction transaction) throws StandardException {
-        return new Object[] {
-                MvccRawStoreFormat.intValue(transaction, 0),
-                MvccRawStoreFormat.intValue(transaction, 0),
-                MvccRawStoreFormat.longValue(transaction, 0L),
-                MvccRawStoreFormat.longValue(transaction, 0L),
-                MvccRawStoreFormat.longValue(transaction, 0L)
-        };
-    }
-
     static Object[] directoryRow(
             Transaction transaction,
             long rowId,
@@ -2216,9 +2045,6 @@ final class MvccRawStoreTable {
     }
 
     record Allocation(long rowId, long versionId) {
-    }
-
-    record AllocatorHighWater(long nextRowId, long nextVersionId) {
     }
 
     record RecordHint(long pageNumber, int recordId) {

@@ -480,9 +480,8 @@ final class MvccRawStoreRuntime {
         if (existing != null) {
             return existing;
         }
-        MvccRawStoreTable.AllocatorHighWater persisted = table.gen2A1()
-                ? MvccRawStoreTable.reconstructGen2A1AllocatorHighWater(transaction, table)
-                : MvccRawStoreTable.readAllocatorHighWater(transaction, table);
+        MvccRawStoreIdentityHighWater.Mark persisted =
+                MvccRawStoreIdentityHighWater.load(transaction, table);
         TableIdentityAllocator created = new TableIdentityAllocator(
                 persisted.nextRowId(),
                 persisted.nextVersionId());
