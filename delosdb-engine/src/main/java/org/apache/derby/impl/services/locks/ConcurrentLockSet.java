@@ -296,34 +296,172 @@ final class ConcurrentLockSet implements LockTable {
     }
 
     /**
-     * Concurrent control used only while a ContainerKey is held exclusively
-     * with intent-shared (CIS) locks. CIS holders are mutually compatible, so
-     * acquisition and release update per-compatibility-space counters without
-     * serializing on {@link Entry#mutex} or a shared reader gate.
+     * A lock control for a Lockable held only in one shared mode that is
+     * compatible with itself, so grants and releases can update
+     * per-compatibility-space hold counts without serializing on
+     * {@link Entry#mutex}.
      *
-     * <p>The first request for any other qualifier clears {@link #fast}, waits
-     * only for already-entered fast operations to leave, then materializes all
-     * holders into the ordinary {@link LockControl}. From that point on,
-     * Derby's existing compatibility, waiter ordering, timeout and deadlock
-     * machinery is authoritative.</p>
+     * <p>Fast operations enter one of a few in-flight stripes and re-check
+     * {@link #fast} after entering. A request that needs Derby's ordinary
+     * machinery clears {@link #fast}, waits for the operations already inside
+     * to leave, and materializes the holders into a {@link LockControl}. From
+     * then on Derby's compatibility, waiter ordering, timeout and deadlock
+     * handling are authoritative.</p>
      */
-    private final class FastCisControl implements Control {
+    private abstract class FastSharedControl implements Control {
         private static final int FAST_OPERATION_STRIPES = 16;
 
-        private final Lockable ref;
-        private final ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders =
+        final Lockable ref;
+        private final Object qualifier;
+        final ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders =
                 new ConcurrentHashMap<CompatibilitySpace, AtomicInteger>();
         private final AtomicIntegerArray inFlight =
                 new AtomicIntegerArray(FAST_OPERATION_STRIPES);
-        private volatile boolean fast = true;
+        volatile boolean fast;
 
-        FastCisControl(Lockable ref) {
+        FastSharedControl(Lockable ref, Object qualifier, boolean fast) {
             this.ref = ref;
+            this.qualifier = qualifier;
+            this.fast = fast;
+        }
+
+        /** An empty control of the same kind with the fast path closed. */
+        abstract Control emptyFrozenCopy();
+
+        /** Called when a fast operation shares its stripe with another one. */
+        void stripeOverlap() {
+        }
+
+        final int enterFast(CompatibilitySpace space) {
+            if (!fast) {
+                return -1;
+            }
+            int stripe = System.identityHashCode(space) & (FAST_OPERATION_STRIPES - 1);
+            int active = inFlight.incrementAndGet(stripe);
+            if (HOT_STATE_DIAGNOSTICS && active > 1) {
+                stripeOverlap();
+            }
+            if (fast) {
+                return stripe;
+            }
+            inFlight.decrementAndGet(stripe);
+            return -1;
+        }
+
+        final void leaveFast(int stripe) {
+            inFlight.decrementAndGet(stripe);
+        }
+
+        final void awaitFastOperations() {
+            for (;;) {
+                boolean active = false;
+                for (int stripe = 0; stripe < inFlight.length(); stripe++) {
+                    if (inFlight.get(stripe) != 0) {
+                        active = true;
+                        break;
+                    }
+                }
+                if (!active) {
+                    return;
+                }
+                Thread.onSpinWait();
+            }
+        }
+
+        final LockControl materialize() {
+            LockControl control = null;
+            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                int count = holder.getValue().get();
+                if (count <= 0) {
+                    continue;
+                }
+                if (control == null) {
+                    Lock first = new Lock(holder.getKey(), ref, qualifier);
+                    first.count = count;
+                    control = new LockControl(first, ref);
+                    continue;
+                }
+                for (int i = 0; i < count; i++) {
+                    Lock granted = control.addLock(
+                            ConcurrentLockSet.this, holder.getKey(), qualifier);
+                    if (SanityManager.DEBUG) {
+                        SanityManager.ASSERT(granted.getCount() != 0,
+                                "materialized fast " + qualifier + " lock was not granted");
+                    }
+                }
+            }
+            return control;
+        }
+
+        final Lock grant(CompatibilitySpace space, int count) {
+            Lock lock = new Lock(space, ref, qualifier);
+            lock.count = count;
+            return lock;
+        }
+
+        public Lockable getLockable() {
+            return ref;
+        }
+
+        public LockControl getLockControl() {
+            return materialize();
+        }
+
+        public Lock getLock(CompatibilitySpace compatibilitySpace,
+                            Object requested) {
+            if (requested != qualifier) {
+                return null;
+            }
+            AtomicInteger held = holders.get(compatibilitySpace);
+            int count = held == null ? 0 : held.get();
+            return count == 0 ? null : grant(compatibilitySpace, count);
+        }
+
+        public Control shallowClone() {
+            LockControl snapshot = materialize();
+            return snapshot == null ? emptyFrozenCopy() : snapshot;
+        }
+
+        public ActiveLock firstWaiter() {
+            return null;
+        }
+
+        public void addWaiters(Map<Object,Object> waiters) {
+        }
+
+        public Lock getFirstGrant() {
+            java.util.List<Lock> grants = getGranted();
+            return grants == null || grants.isEmpty() ? null : grants.get(0);
+        }
+
+        public java.util.List<Lock> getGranted() {
+            java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
+            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
+                int count = holder.getValue().get();
+                if (count > 0) {
+                    grants.add(grant(holder.getKey(), count));
+                }
+            }
+            return grants.isEmpty() ? null : grants;
+        }
+
+        public java.util.List<Lock> getWaiting() {
+            return null;
+        }
+    }
+
+    /**
+     * Fast control used while a ContainerKey is held only with intent-shared
+     * (CIS) locks. CIS holds are re-entrant: a compatibility space keeps one
+     * counter that each grant raises and each release lowers.
+     */
+    private final class FastCisControl extends FastSharedControl {
+        FastCisControl(Lockable ref) {
+            super(ref, LockFastPaths.CONTAINER_INTENT_SHARED, true);
         }
 
         private FastCisControl(Lockable ref, boolean fast) {
-            this.ref = ref;
-            this.fast = fast;
+            super(ref, LockFastPaths.CONTAINER_INTENT_SHARED, fast);
         }
 
         Lock tryAcquire(CompatibilitySpace space) {
@@ -341,9 +479,7 @@ final class ConcurrentLockSet implements LockTable {
                     }
                     return new AtomicInteger();
                 }).incrementAndGet();
-                Lock lock = new Lock(space, ref, LockFastPaths.CONTAINER_INTENT_SHARED);
-                lock.count = count;
-                return lock;
+                return grant(space, count);
             } finally {
                 leaveFast(stripe);
             }
@@ -381,65 +517,18 @@ final class ConcurrentLockSet implements LockTable {
 
         LockControl freeze() {
             fast = false;
-            awaitFastOperations(inFlight);
-            return materializeCisHolders(ref, holders);
+            awaitFastOperations();
+            return materialize();
         }
 
-        private int enterFast(CompatibilitySpace space) {
-            if (!fast) {
-                return -1;
-            }
-            int stripe = System.identityHashCode(space) & (FAST_OPERATION_STRIPES - 1);
-            int active = inFlight.incrementAndGet(stripe);
-            if (HOT_STATE_DIAGNOSTICS && active > 1) {
-                FAST_CIS_STRIPE_OVERLAP.increment();
-            }
-            if (fast) {
-                return stripe;
-            }
-            inFlight.decrementAndGet(stripe);
-            return -1;
+        @Override
+        Control emptyFrozenCopy() {
+            return new FastCisControl(ref, false);
         }
 
-        private void leaveFast(int stripe) {
-            inFlight.decrementAndGet(stripe);
-        }
-
-
-        private LockControl snapshot() {
-            return materializeCisHolders(ref, holders);
-        }
-
-        public Lockable getLockable() {
-            return ref;
-        }
-
-        public LockControl getLockControl() {
-            return snapshot();
-        }
-
-        public Lock getLock(CompatibilitySpace compatibilitySpace,
-                            Object qualifier) {
-            if (qualifier != LockFastPaths.CONTAINER_INTENT_SHARED) {
-                return null;
-            }
-            AtomicInteger held = holders.get(compatibilitySpace);
-            int count = held == null ? 0 : held.get();
-            if (count == 0) {
-                return null;
-            }
-            Lock lock = new Lock(compatibilitySpace, ref, qualifier);
-            lock.count = count;
-            return lock;
-        }
-
-        public Control shallowClone() {
-            LockControl snapshot = snapshot();
-            return snapshot == null ? new FastCisControl(ref, false) : snapshot;
-        }
-
-        public ActiveLock firstWaiter() {
-            return null;
+        @Override
+        void stripeOverlap() {
+            FAST_CIS_STRIPE_OVERLAP.increment();
         }
 
         public boolean isEmpty() {
@@ -449,31 +538,6 @@ final class ConcurrentLockSet implements LockTable {
         public boolean unlock(Latch lockInGroup, int unlockCount) {
             tryRelease(lockInGroup, unlockCount);
             return false;
-        }
-
-        public void addWaiters(Map<Object,Object> waiters) {
-        }
-
-        public Lock getFirstGrant() {
-            java.util.List<Lock> grants = getGranted();
-            return grants == null || grants.isEmpty() ? null : grants.get(0);
-        }
-
-        public java.util.List<Lock> getGranted() {
-            java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
-            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
-                int count = holder.getValue().get();
-                if (count > 0) {
-                    Lock lock = new Lock(holder.getKey(), ref, LockFastPaths.CONTAINER_INTENT_SHARED);
-                    lock.count = count;
-                    grants.add(lock);
-                }
-            }
-            return grants.isEmpty() ? null : grants;
-        }
-
-        public java.util.List<Lock> getWaiting() {
-            return null;
         }
 
         public boolean isGrantable(boolean noWaitersBeforeMe,
@@ -491,45 +555,33 @@ final class ConcurrentLockSet implements LockTable {
         }
     }
 
-
     /**
-     * Concurrent control for a RecordId held only with compatible RS2 locks.
-     * It is installed adaptively only when a second compatibility space
-     * overlaps the first reader. Once promoted, the empty control remains
-     * dormant and reusable across short idle gaps so a genuinely hot record
-     * does not repeatedly fall back through Entry.mutex promotion.
+     * Fast control for a RecordId held only with compatible RS2 locks. It is
+     * installed adaptively only when a second compatibility space overlaps the
+     * first reader. Once promoted, the empty control remains dormant and
+     * reusable across short idle gaps so a genuinely hot record does not
+     * repeatedly fall back through Entry.mutex promotion.
      *
-     * <p>The first request for any other qualifier freezes this control, waits
-     * for already-entered fast operations to leave, and materializes all RS2
-     * holders into the ordinary LockControl. From that point onward Derby's
-     * waiter ordering, timeout, conversion, and deadlock machinery is
-     * authoritative.</p>
+     * <p>Each compatibility space holds at most one RS2 lock here: its counter
+     * is 1 while held, 0 once released and -1 while the slot is being removed.
+     * A second request from the same space takes the ordinary path.</p>
      */
-    private final class FastRecordReadControl implements Control {
-        private static final int FAST_OPERATION_STRIPES = 16;
-
-        private final Lockable ref;
-        private final ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders =
-                new ConcurrentHashMap<CompatibilitySpace, AtomicInteger>();
-        private final AtomicIntegerArray inFlight =
-                new AtomicIntegerArray(FAST_OPERATION_STRIPES);
+    private final class FastRecordReadControl extends FastSharedControl {
         private final AtomicInteger totalHolds = new AtomicInteger();
         private final Entry entry;
         private final int retentionSlot;
-        private volatile boolean fast = true;
 
         FastRecordReadControl(Entry entry, Lock firstGrant) {
+            super(firstGrant.getLockable(), LockFastPaths.ROW_SHARED, true);
             this.entry = entry;
-            ref = firstGrant.getLockable();
             retentionSlot = fastRecordReadRetentionSlot(ref);
             holders.put(firstGrant.getCompatabilitySpace(), new AtomicInteger(1));
             totalHolds.set(1);
         }
 
         private FastRecordReadControl(Lockable ref, boolean fast) {
+            super(ref, LockFastPaths.ROW_SHARED, fast);
             this.entry = null;
-            this.ref = ref;
-            this.fast = fast;
             retentionSlot = -1;
         }
 
@@ -567,9 +619,7 @@ final class ConcurrentLockSet implements LockTable {
                 if (HOT_STATE_DIAGNOSTICS) {
                     FAST_RECORD_READ_ACQUIRE_HITS.increment();
                 }
-                Lock lock = new Lock(space, ref, LockFastPaths.ROW_SHARED);
-                lock.count = 1;
-                return lock;
+                return grant(space, 1);
             } finally {
                 leaveFast(stripe);
             }
@@ -607,11 +657,11 @@ final class ConcurrentLockSet implements LockTable {
         LockControl freeze() {
             fast = false;
             releaseRetentionSlot();
-            awaitFastOperations(inFlight);
+            awaitFastOperations();
             if (HOT_STATE_DIAGNOSTICS) {
                 FAST_RECORD_READ_FREEZES.increment();
             }
-            return materializeRecordReadHolders(ref, holders);
+            return materialize();
         }
 
         void retainOrRetireIfDormant() {
@@ -661,7 +711,7 @@ final class ConcurrentLockSet implements LockTable {
                 return false;
             }
             fast = false;
-            awaitFastOperations(inFlight);
+            awaitFastOperations();
             entry.lock();
             try {
                 if (entry.control != this) {
@@ -700,58 +750,9 @@ final class ConcurrentLockSet implements LockTable {
             }
         }
 
-        private int enterFast(CompatibilitySpace space) {
-            if (!fast) {
-                return -1;
-            }
-            int stripe = System.identityHashCode(space) & (FAST_OPERATION_STRIPES - 1);
-            inFlight.incrementAndGet(stripe);
-            if (fast) {
-                return stripe;
-            }
-            inFlight.decrementAndGet(stripe);
-            return -1;
-        }
-
-        private void leaveFast(int stripe) {
-            inFlight.decrementAndGet(stripe);
-        }
-
-
-        private LockControl snapshot() {
-            return materializeRecordReadHolders(ref, holders);
-        }
-
-        public Lockable getLockable() {
-            return ref;
-        }
-
-        public LockControl getLockControl() {
-            return snapshot();
-        }
-
-        public Lock getLock(CompatibilitySpace compatibilitySpace,
-                            Object qualifier) {
-            if (qualifier != LockFastPaths.ROW_SHARED) {
-                return null;
-            }
-            AtomicInteger held = holders.get(compatibilitySpace);
-            int count = held == null ? 0 : held.get();
-            if (count == 0) {
-                return null;
-            }
-            Lock lock = new Lock(compatibilitySpace, ref, qualifier);
-            lock.count = count;
-            return lock;
-        }
-
-        public Control shallowClone() {
-            LockControl snapshot = snapshot();
-            return snapshot == null ? new FastRecordReadControl(ref, false) : snapshot;
-        }
-
-        public ActiveLock firstWaiter() {
-            return null;
+        @Override
+        Control emptyFrozenCopy() {
+            return new FastRecordReadControl(ref, false);
         }
 
         public boolean isEmpty() {
@@ -760,31 +761,6 @@ final class ConcurrentLockSet implements LockTable {
 
         public boolean unlock(Latch lockInGroup, int unlockCount) {
             return false;
-        }
-
-        public void addWaiters(Map<Object,Object> waiters) {
-        }
-
-        public Lock getFirstGrant() {
-            java.util.List<Lock> grants = getGranted();
-            return grants == null || grants.isEmpty() ? null : grants.get(0);
-        }
-
-        public java.util.List<Lock> getGranted() {
-            java.util.ArrayList<Lock> grants = new java.util.ArrayList<Lock>();
-            for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
-                int count = holder.getValue().get();
-                if (count > 0) {
-                    Lock lock = new Lock(holder.getKey(), ref, LockFastPaths.ROW_SHARED);
-                    lock.count = count;
-                    grants.add(lock);
-                }
-            }
-            return grants.isEmpty() ? null : grants;
-        }
-
-        public java.util.List<Lock> getWaiting() {
-            return null;
         }
 
         public boolean isGrantable(boolean noWaitersBeforeMe,
@@ -797,75 +773,6 @@ final class ConcurrentLockSet implements LockTable {
             }
             return ref.requestCompatible(qualifier, LockFastPaths.ROW_SHARED);
         }
-    }
-
-    private static void awaitFastOperations(AtomicIntegerArray inFlight) {
-        for (;;) {
-            boolean active = false;
-            for (int stripe = 0; stripe < inFlight.length(); stripe++) {
-                if (inFlight.get(stripe) != 0) {
-                    active = true;
-                    break;
-                }
-            }
-            if (!active) {
-                return;
-            }
-            Thread.onSpinWait();
-        }
-    }
-
-    private LockControl materializeCisHolders(
-            Lockable ref,
-            ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders) {
-        LockControl control = null;
-        for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
-            int count = holder.getValue().get();
-            if (count <= 0) {
-                continue;
-            }
-            if (control == null) {
-                Lock first = new Lock(holder.getKey(), ref, LockFastPaths.CONTAINER_INTENT_SHARED);
-                first.count = count;
-                control = new LockControl(first, ref);
-                continue;
-            }
-            for (int i = 0; i < count; i++) {
-                Lock granted = control.addLock(this, holder.getKey(), LockFastPaths.CONTAINER_INTENT_SHARED);
-                if (SanityManager.DEBUG) {
-                    SanityManager.ASSERT(granted.getCount() != 0,
-                            "materialized CIS lock was not granted");
-                }
-            }
-        }
-        return control;
-    }
-
-
-    private LockControl materializeRecordReadHolders(
-            Lockable ref,
-            ConcurrentHashMap<CompatibilitySpace, AtomicInteger> holders) {
-        LockControl control = null;
-        for (Map.Entry<CompatibilitySpace, AtomicInteger> holder : holders.entrySet()) {
-            int count = holder.getValue().get();
-            if (count <= 0) {
-                continue;
-            }
-            if (control == null) {
-                Lock first = new Lock(holder.getKey(), ref, LockFastPaths.ROW_SHARED);
-                first.count = count;
-                control = new LockControl(first, ref);
-                continue;
-            }
-            for (int i = 0; i < count; i++) {
-                Lock granted = control.addLock(this, holder.getKey(), LockFastPaths.ROW_SHARED);
-                if (SanityManager.DEBUG) {
-                    SanityManager.ASSERT(granted.getCount() != 0,
-                            "materialized RecordId RS2 lock was not granted");
-                }
-            }
-        }
-        return control;
     }
 
     private int fastRecordReadRetentionSlot(Lockable ref) {
