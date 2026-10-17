@@ -212,6 +212,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/DerbyMvccAc
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerate.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglomerateFactory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDeletedKeyProof.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreCommitStamps.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java

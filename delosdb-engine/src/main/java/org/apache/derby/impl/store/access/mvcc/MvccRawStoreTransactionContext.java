@@ -506,13 +506,13 @@ final class MvccRawStoreTransactionContext implements AccessMethodTransactionLif
         try {
             stageAllocatorHighWaters();
             transactionStatusCommitStaged = runtime.transactionStatuses.enabled()
-                    && MvccRawStoreTable.freshInlineInsertBatch(committableVersions);
+                    && MvccRawStoreCommitStamps.freshInlineInsertBatch(committableVersions);
             if (transactionStatusCommitStaged) {
                 runtime.transactionStatuses.stage(rawTransaction, transactionId, reservedCommitSequence, committableVersions);
                 transactionStatusCommitDiagnosticEntered =
                         MvccTransactionStatusCommitDiagnostics.enter();
             } else {
-                MvccRawStoreTable.stampPendingVersions(
+                MvccRawStoreCommitStamps.stamp(
                         rawTransaction,
                         committableVersions,
                         reservedCommitSequence);

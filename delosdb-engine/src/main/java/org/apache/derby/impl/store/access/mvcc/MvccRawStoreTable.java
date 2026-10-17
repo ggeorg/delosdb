@@ -11,8 +11,6 @@
 package org.apache.derby.impl.store.access.mvcc;
 
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -26,14 +24,12 @@ import org.apache.derby.iapi.store.access.conglomerate.TransactionManager;
 import org.apache.derby.iapi.store.raw.ContainerHandle;
 import org.apache.derby.iapi.store.raw.ContainerKey;
 import org.apache.derby.iapi.store.raw.FetchDescriptor;
-import org.apache.derby.iapi.store.raw.LockingPolicy;
 import org.apache.derby.iapi.store.raw.Page;
 import org.apache.derby.iapi.store.raw.RecordHandle;
 import org.apache.derby.iapi.store.raw.Transaction;
 import org.apache.derby.iapi.store.types.StoreDataValue;
 import org.apache.derby.iapi.store.types.StoreRowLocation;
 import org.apache.derby.iapi.store.types.StoreValueCopySupport;
-import org.apache.derby.iapi.store.types.StoreTypeUtil;
 import org.apache.derby.shared.common.error.StandardException;
 import org.apache.derby.shared.common.reference.SQLState;
 
@@ -2276,65 +2272,6 @@ final class MvccRawStoreTable {
                 && version.beginSequence() == MvccRawStoreFormat.UNCOMMITTED_SEQUENCE;
     }
 
-    static void stampPendingVersions(
-            Transaction rawTransaction,
-            List<PendingVersion> pending,
-            long commitSequence) throws StandardException {
-        if (Boolean.getBoolean(MvccRawStoreFormat.GEN2_COMMIT_STAMP_BATCH_ENABLED_PROPERTY)
-                && freshInlineInsertBatch(pending)) {
-            MvccRawStoreRowDirectory.stampCommittedHeadsByHint(
-                    rawTransaction,
-                    pending,
-                    commitSequence);
-            return;
-        }
-        List<PendingVersion> ordered = new ArrayList<>(pending);
-        ordered.sort(Comparator
-                .comparingLong((PendingVersion version) ->
-                        version.table().metadataContainer().getSegmentId())
-                .thenComparingLong(version ->
-                        version.table().metadataContainer().getContainerId())
-                .thenComparingLong(PendingVersion::versionId));
-        for (PendingVersion version : ordered) {
-            if (!version.inlineCurrent()) {
-                updateVersionBegin(
-                        rawTransaction,
-                        version.table(),
-                        version,
-                        commitSequence);
-            }
-            MvccRawStoreRowDirectory.stampCommittedHead(
-                    rawTransaction,
-                    version,
-                    commitSequence);
-            if (version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION) {
-                updateVersionEnd(
-                        rawTransaction,
-                        version.table(),
-                        version.rowId(),
-                        version.previousVersionId(),
-                        version.previousHint(),
-                        commitSequence);
-            }
-        }
-    }
-
-    static boolean freshInlineInsertBatch(List<PendingVersion> pending) {
-        if (pending.isEmpty()) {
-            return false;
-        }
-        for (PendingVersion version : pending) {
-            MvccRowLocation location = version.directoryLocation();
-            if (!version.inlineCurrent()
-                    || version.previousVersionId() != MvccRawStoreFormat.NO_PREVIOUS_VERSION
-                    || location == null
-                    || !location.hasLocatorHint()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     static void rebuildOrderedIndexForTransaction(
             Transaction transaction,
             Descriptor table,
@@ -2946,243 +2883,6 @@ final class MvccRawStoreTable {
                 null,
                 insertFlags(page),
                 OVERFLOW_THRESHOLD);
-    }
-
-    private static void updateVersionBegin(
-            Transaction transaction,
-            Descriptor table,
-            PendingVersion pending,
-            long commitSequence) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.versionContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        Page page = null;
-        try {
-            RecordHandle handle = pending.handle();
-            page = container.getPage(handle.getPageNumber());
-            if (page != null) {
-                int slot = page.getSlotNumber(handle);
-                if (slot >= Page.FIRST_SLOT_NUMBER && !page.isDeletedAtSlot(slot)) {
-                    StoreDataValue storedKind = MvccRawStoreFormat.intValue(transaction, 0);
-                    StoreDataValue storedRowId = MvccRawStoreFormat.longValue(transaction, 0L);
-                    StoreDataValue storedVersionId = MvccRawStoreFormat.longValue(transaction, 0L);
-                    page.fetchFieldFromSlot(
-                            slot,
-                            MvccRawStoreFormat.VERSION_KIND_FIELD,
-                            storedKind);
-                    page.fetchFieldFromSlot(
-                            slot,
-                            MvccRawStoreFormat.VERSION_ROW_ID,
-                            storedRowId);
-                    page.fetchFieldFromSlot(
-                            slot,
-                            MvccRawStoreFormat.VERSION_ID,
-                            storedVersionId);
-                    if (StoreTypeUtil.getLong(storedKind) == MvccRawStoreFormat.VERSION_KIND
-                            && StoreTypeUtil.getLong(storedRowId) == pending.rowId()
-                            && StoreTypeUtil.getLong(storedVersionId) == pending.versionId()) {
-                        page.updateFieldAtSlot(
-                                slot,
-                                MvccRawStoreFormat.VERSION_BEGIN_SEQUENCE,
-                                MvccRawStoreFormat.longValue(transaction, commitSequence),
-                                null);
-                        return;
-                    }
-                }
-                page.unlatch();
-                page = null;
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-        updateVersionBeginByLogicalId(
-                transaction,
-                table,
-                pending.rowId(),
-                pending.versionId(),
-                commitSequence);
-    }
-
-    private static void updateVersionBeginByLogicalId(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            long versionId,
-            long commitSequence) throws StandardException {
-        ContainerHandle container = transaction.openContainer(
-                table.versionContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 1
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    StoreDataValue candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
-                    StoreDataValue candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
-                    page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ROW_ID, candidateRow);
-                    page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ID, candidateVersion);
-                    if (StoreTypeUtil.getLong(candidateRow) == rowId
-                            && StoreTypeUtil.getLong(candidateVersion) == versionId) {
-                        page.updateFieldAtSlot(
-                                slot,
-                                MvccRawStoreFormat.VERSION_BEGIN_SEQUENCE,
-                                MvccRawStoreFormat.longValue(transaction, commitSequence),
-                                null);
-                        return;
-                    }
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-        throw new IllegalStateException("RawStore MVCC version disappeared before commit: " + versionId);
-    }
-
-    private static void updateVersionEnd(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            long versionId,
-            RecordHint hint,
-            long commitSequence) throws StandardException {
-        if (updateVersionEndByHint(
-                transaction,
-                table,
-                rowId,
-                versionId,
-                hint,
-                commitSequence)) {
-            return;
-        }
-
-        ContainerHandle container = transaction.openContainer(
-                table.versionContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        Page page = null;
-        try {
-            page = container.getFirstPage();
-            while (page != null) {
-                int startSlot = page.getPageNumber() == ContainerHandle.FIRST_PAGE_NUMBER
-                        ? Page.FIRST_SLOT_NUMBER + 1
-                        : Page.FIRST_SLOT_NUMBER;
-                for (int slot = startSlot; slot < page.recordCount(); slot++) {
-                    if (page.isDeletedAtSlot(slot)) {
-                        continue;
-                    }
-                    StoreDataValue candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
-                    StoreDataValue candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
-                    page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ROW_ID, candidateRow);
-                    page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ID, candidateVersion);
-                    if (StoreTypeUtil.getLong(candidateRow) == rowId
-                            && StoreTypeUtil.getLong(candidateVersion) == versionId) {
-                        stampVersionEndAtSlot(transaction, page, slot, versionId, commitSequence);
-                        return;
-                    }
-                }
-                long pageNumber = page.getPageNumber();
-                page.unlatch();
-                page = container.getNextPage(pageNumber);
-            }
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-        throw new IllegalStateException(
-                "RawStore MVCC predecessor version disappeared before commit: " + versionId);
-    }
-
-    private static boolean updateVersionEndByHint(
-            Transaction transaction,
-            Descriptor table,
-            long rowId,
-            long versionId,
-            RecordHint hint,
-            long commitSequence) throws StandardException {
-        if (!hint.valid()) {
-            return false;
-        }
-        ContainerHandle container = transaction.openContainer(
-                table.versionContainer(),
-                MvccRawStorePhysicalLocking.rowLevel(transaction),
-                ContainerHandle.MODE_FORUPDATE);
-        if (container == null) {
-            return false;
-        }
-        Page page = null;
-        try {
-            page = container.getPage(hint.pageNumber());
-            if (page == null) {
-                return false;
-            }
-            RecordHandle handle = page.getRecordHandle(hint.recordId());
-            if (handle == null) {
-                return false;
-            }
-            int slot = page.getSlotNumber(handle);
-            if (page.isDeletedAtSlot(slot)) {
-                return false;
-            }
-            StoreDataValue candidateKind = MvccRawStoreFormat.intValue(transaction, 0);
-            StoreDataValue candidateRow = MvccRawStoreFormat.longValue(transaction, 0L);
-            StoreDataValue candidateVersion = MvccRawStoreFormat.longValue(transaction, 0L);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_KIND_FIELD, candidateKind);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ROW_ID, candidateRow);
-            page.fetchFieldFromSlot(slot, MvccRawStoreFormat.VERSION_ID, candidateVersion);
-            if (StoreTypeUtil.getLong(candidateKind) != MvccRawStoreFormat.VERSION_KIND
-                    || StoreTypeUtil.getLong(candidateRow) != rowId
-                    || StoreTypeUtil.getLong(candidateVersion) != versionId) {
-                return false;
-            }
-            stampVersionEndAtSlot(transaction, page, slot, versionId, commitSequence);
-            return true;
-        } finally {
-            if (page != null) {
-                page.unlatch();
-            }
-            container.close();
-        }
-    }
-
-    private static void stampVersionEndAtSlot(
-            Transaction transaction,
-            Page page,
-            int slot,
-            long versionId,
-            long commitSequence) throws StandardException {
-        StoreDataValue currentEnd = MvccRawStoreFormat.longValue(transaction, 0L);
-        page.fetchFieldFromSlot(
-                slot,
-                MvccRawStoreFormat.VERSION_END_SEQUENCE,
-                currentEnd);
-        if (StoreTypeUtil.getLong(currentEnd) != MvccRawStoreFormat.CURRENT_END_SEQUENCE) {
-            throw new IllegalStateException(
-                    "RawStore MVCC predecessor already has an end sequence: " + versionId);
-        }
-        page.updateFieldAtSlot(
-                slot,
-                MvccRawStoreFormat.VERSION_END_SEQUENCE,
-                MvccRawStoreFormat.longValue(transaction, commitSequence),
-                null);
     }
 
     static DirectoryRecord decodeDirectory(
