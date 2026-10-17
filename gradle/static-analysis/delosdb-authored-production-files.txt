@@ -214,6 +214,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccConglom
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccDeletedKeyProof.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreCommitStamps.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreConglomerateController.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreCurrentRows.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDatabaseMetadata.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreDiagnosticsDirectory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreFormat.java
@@ -226,6 +227,7 @@ delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStor
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRowDirectory.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreRuntime.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreScanController.java
+delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreStreamingScan.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTable.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTableMetadata.java
 delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreTransactionContext.java

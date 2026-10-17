@@ -58,7 +58,7 @@ final class MvccRawStoreConglomerateController
     private FormatableBitSet readProjectionColumns;
     private MvccRawStoreVersionRows.FetchProjection readProjection;
     private MvccRawStoreVersionRows.FetchProjection readCurrentBaseFetchProjection;
-    private MvccRawStoreTable.CurrentBaseFetchDecoder readCurrentBaseFetchDecoder;
+    private MvccRawStoreCurrentRows.CurrentBaseFetchDecoder readCurrentBaseFetchDecoder;
     private final boolean baseFetchPagePrefetchRequested;
     private MvccRawStoreRuntime.TableReadBoundary statementReadBoundary;
     private long[] prefetchedDirectoryRowIds;
@@ -626,12 +626,12 @@ final class MvccRawStoreConglomerateController
         return readProjection;
     }
 
-    private MvccRawStoreTable.CurrentBaseFetchDecoder currentBaseFetchDecoder(
+    private MvccRawStoreCurrentRows.CurrentBaseFetchDecoder currentBaseFetchDecoder(
             MvccRawStoreVersionRows.FetchProjection projection) throws StandardException {
         if (readCurrentBaseFetchDecoder == null || readCurrentBaseFetchProjection != projection) {
             readCurrentBaseFetchProjection = projection;
             readCurrentBaseFetchDecoder =
-                    new MvccRawStoreTable.CurrentBaseFetchDecoder(
+                    new MvccRawStoreCurrentRows.CurrentBaseFetchDecoder(
                             rawTransaction, table, projection);
         }
         return readCurrentBaseFetchDecoder;

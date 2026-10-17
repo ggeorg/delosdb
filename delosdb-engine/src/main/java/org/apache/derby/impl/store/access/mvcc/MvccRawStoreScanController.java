@@ -42,7 +42,7 @@ final class MvccRawStoreScanController implements ScanManager {
     private final boolean readCommittedUpdateRecheck;
     private Qualifier[][] qualifiers;
     private List<MvccRawStoreTable.VisibleRow> rows;
-    private MvccRawStoreTable.StreamingBatchScan streamingScan;
+    private MvccRawStoreStreamingScan streamingScan;
     private MvccRawStoreRuntime.TableReadBoundary streamingReadBoundary;
     private StoreDataValue[] streamingSingleRow;
     private StoreDataValue[][] streamingSingleGroup;
@@ -490,9 +490,9 @@ final class MvccRawStoreScanController implements ScanManager {
             throws StandardException {
         List<MvccRawStoreTable.VisibleRow> emptyRows = List.of();
         MvccRawStoreRuntime.TableReadBoundary readBoundary = runtime.enterTableRead(table);
-        MvccRawStoreTable.StreamingBatchScan scan = null;
+        MvccRawStoreStreamingScan scan = null;
         try {
-            scan = new MvccRawStoreTable.StreamingBatchScan(
+            scan = new MvccRawStoreStreamingScan(
                     rawTransaction, table, snapshotSequence, versionProjection, context);
         } finally {
             if (scan == null) {
@@ -529,7 +529,7 @@ final class MvccRawStoreScanController implements ScanManager {
         for (int index = 0; index < rowArray.length; index++) {
             ensureGroupRow(rowArray, index);
         }
-        MvccRawStoreTable.StreamingBatchResult result = streamingScan.fetchGroup(
+        MvccRawStoreStreamingScan.Batch result = streamingScan.fetchGroup(
                 rowArray, rowlocArray, scanColumnList, qualifiers);
         rowsVisited += result.visited();
         rowsQualified += result.qualified();

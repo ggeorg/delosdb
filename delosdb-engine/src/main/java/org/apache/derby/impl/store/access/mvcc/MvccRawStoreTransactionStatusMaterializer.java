@@ -151,9 +151,7 @@ final class MvccRawStoreTransactionStatusMaterializer {
             MvccRawStoreTable.Descriptor table,
             Page page,
             int slot) throws StandardException {
-        int expected = table.gen2History()
-                ? MvccRawStoreFormat.gen2C1CurrentFieldCount(table.columnCount())
-                : MvccRawStoreFormat.gen2A1CurrentFieldCount(table.columnCount());
+        int expected = MvccRawStoreCurrentRows.currentFieldCount(table);
         int fieldCount = page.fetchNumFieldsAtSlot(slot);
         if (fieldCount != expected) {
             throw corruption(
