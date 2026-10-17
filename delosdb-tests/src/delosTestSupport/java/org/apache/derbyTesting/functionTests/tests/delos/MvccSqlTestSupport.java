@@ -33,6 +33,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -40,6 +41,8 @@ import org.apache.derby.iapi.store.access.conglomerate.ConglomerateFactory;
 import org.apache.derby.iapi.store.types.DelosStorageConsistencyTarget;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenanceTableSnapshot;
+import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
 
 import junit.framework.TestCase;
 
@@ -257,6 +260,51 @@ abstract class MvccSqlTestSupport extends TestCase {
 
     protected static DelosStorageDiagnostics mvccDiagnostics(String databaseName) {
         return DelosStorageDiagnosticsRegistry.mvcc(databasePath(databaseName));
+    }
+
+    protected static DelosStorageMaintenanceSnapshot mvccMaintenanceSnapshot(String databaseName) {
+        return DelosStorageDiagnosticsRegistry.mvccDatabaseMaintenanceSnapshot(
+                databasePath(databaseName));
+    }
+
+    protected static DelosStorageMaintenanceTableSnapshot maintenanceTable(
+            DelosStorageMaintenanceSnapshot snapshot,
+            long metadataContainerId) {
+        return snapshot.tableSnapshots().stream()
+                .filter(table -> table.metadataContainerId() == metadataContainerId)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "No maintenance observation for container " + metadataContainerId
+                                + " in " + snapshot.tableSnapshots()));
+    }
+
+    @FunctionalInterface
+    protected interface Condition {
+        boolean evaluate() throws Exception;
+    }
+
+    /**
+     * Polls a condition that background work makes true, failing after twenty
+     * seconds with the last exception the condition threw.
+     */
+    protected static void waitUntil(String failureMessage, Condition condition) throws Exception {
+        long deadline = System.nanoTime() + Duration.ofSeconds(20L).toNanos();
+        Throwable lastFailure = null;
+        while (System.nanoTime() < deadline) {
+            try {
+                if (condition.evaluate()) {
+                    return;
+                }
+            } catch (Throwable transientFailure) {
+                lastFailure = transientFailure;
+            }
+            Thread.sleep(20L);
+        }
+        AssertionError failure = new AssertionError(failureMessage);
+        if (lastFailure != null) {
+            failure.initCause(lastFailure);
+        }
+        throw failure;
     }
 
     protected static DelosStorageConsistencyTarget mvccTarget(

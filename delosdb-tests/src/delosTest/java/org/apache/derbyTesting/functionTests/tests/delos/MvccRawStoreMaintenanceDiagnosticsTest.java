@@ -12,7 +12,6 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.time.Duration;
 import java.util.List;
 
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
@@ -27,7 +26,6 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
             "delosdb.mvcc.rawStoreMaintenance.periodMillis";
     private static final String CHANGED_ROWS_THRESHOLD_PROPERTY =
             "delosdb.mvcc.rawStoreMaintenance.changedRowsThreshold";
-    private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(20L);
 
     public void testMaintenanceIsExplicitDuringConvergenceAndDiagnosticsRemainDatabaseScoped()
             throws Exception {
@@ -50,7 +48,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 connection.commit();
 
                 long tableId = mvccContainerId(connection, "MAINTENANCE_DISABLED_T");
-                DelosStorageMaintenanceSnapshot snapshot = snapshot(database);
+                DelosStorageMaintenanceSnapshot snapshot = mvccMaintenanceSnapshot(database);
                 assertTrue(snapshot.runtimeActive());
                 assertFalse(snapshot.maintenanceEnabled());
                 assertFalse(snapshot.accepting());
@@ -58,7 +56,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 assertEquals(1, snapshot.registeredTableCount());
                 assertEquals(0L, snapshot.scheduledRunCount());
                 assertEquals(0L, snapshot.completedRunCount());
-                DelosStorageMaintenanceTableSnapshot table = tableSnapshot(snapshot, tableId);
+                DelosStorageMaintenanceTableSnapshot table = maintenanceTable(snapshot, tableId);
                 assertTrue(table.active());
                 assertFalse(table.queued());
                 assertFalse(table.running());
@@ -98,10 +96,10 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 waitUntil("autonomous maintenance did not reclaim committed history", () ->
                         MvccRawStoreMetadataInspection.versions(
                                 connection, "MAINTENANCE_AUTO_T").size() == 1
-                                && snapshot(database).mutatedRunCount() > 0L);
+                                && mvccMaintenanceSnapshot(database).mutatedRunCount() > 0L);
 
-                DelosStorageMaintenanceSnapshot first = snapshot(database);
-                DelosStorageMaintenanceSnapshot second = snapshot(database);
+                DelosStorageMaintenanceSnapshot first = mvccMaintenanceSnapshot(database);
+                DelosStorageMaintenanceSnapshot second = mvccMaintenanceSnapshot(database);
                 assertTrue(first.runtimeActive());
                 assertTrue(first.maintenanceEnabled());
                 assertTrue(first.accepting());
@@ -117,7 +115,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 assertEquals(first.storageMode(), second.storageMode());
                 assertEquals(first.collectionSemantics(), second.collectionSemantics());
 
-                DelosStorageMaintenanceTableSnapshot table = tableSnapshot(first, tableId);
+                DelosStorageMaintenanceTableSnapshot table = maintenanceTable(first, tableId);
                 assertEquals(0L, table.failureCount());
                 assertEquals(1, table.remainingVersions());
                 assertEquals(1, table.remainingLogicalRows());
@@ -172,8 +170,8 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
 
                 long tableId = mvccContainerId(writer, "MAINTENANCE_HORIZON_T");
                 waitUntil("retained snapshot was not reported as a vacuum constraint", () -> {
-                    DelosStorageMaintenanceSnapshot current = snapshot(database);
-                    DelosStorageMaintenanceTableSnapshot table = tableSnapshot(current, tableId);
+                    DelosStorageMaintenanceSnapshot current = mvccMaintenanceSnapshot(database);
+                    DelosStorageMaintenanceTableSnapshot table = maintenanceTable(current, tableId);
                     return current.retainedSnapshotCount() >= 1
                             && current.vacuumHorizon() < current.publishedCommitHighWater()
                             && table.retryRequired()
@@ -183,9 +181,9 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 assertRows(reader,
                         "select value from maintenance_horizon_t where id = 1",
                         "10");
-                DelosStorageMaintenanceSnapshot constrained = snapshot(database);
+                DelosStorageMaintenanceSnapshot constrained = mvccMaintenanceSnapshot(database);
                 DelosStorageMaintenanceTableSnapshot constrainedTable =
-                        tableSnapshot(constrained, tableId);
+                        maintenanceTable(constrained, tableId);
                 assertEquals(constrained.vacuumHorizon(), constrained.oldestRetainedSnapshot());
                 assertEquals("retained-snapshot-protects-history",
                         constrainedTable.lastDecision());
@@ -194,9 +192,9 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 waitUntil("periodic retry did not reclaim history after lease release", () ->
                         MvccRawStoreMetadataInspection.versions(
                                 writer, "MAINTENANCE_HORIZON_T").size() == 1
-                                && !tableSnapshot(snapshot(database), tableId).retryRequired());
+                                && !maintenanceTable(mvccMaintenanceSnapshot(database), tableId).retryRequired());
 
-                DelosStorageMaintenanceSnapshot released = snapshot(database);
+                DelosStorageMaintenanceSnapshot released = mvccMaintenanceSnapshot(database);
                 assertEquals(0, released.retainedSnapshotCount());
                 assertEquals(released.publishedCommitHighWater(), released.vacuumHorizon());
                 assertEquals(released.publishedCommitHighWater(), released.oldestRetainedSnapshot());
@@ -233,9 +231,9 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
                 first.commit();
 
                 waitUntil("first database maintenance did not run", () ->
-                        snapshot(firstDatabase).completedRunCount() > 0L);
-                DelosStorageMaintenanceSnapshot firstSnapshot = snapshot(firstDatabase);
-                DelosStorageMaintenanceSnapshot secondSnapshot = snapshot(secondDatabase);
+                        mvccMaintenanceSnapshot(firstDatabase).completedRunCount() > 0L);
+                DelosStorageMaintenanceSnapshot firstSnapshot = mvccMaintenanceSnapshot(firstDatabase);
+                DelosStorageMaintenanceSnapshot secondSnapshot = mvccMaintenanceSnapshot(secondDatabase);
                 assertFalse(firstSnapshot.databaseIdentity().equals(
                         secondSnapshot.databaseIdentity()));
                 assertEquals(1, firstSnapshot.workerCount());
@@ -249,7 +247,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
             }
             shutdownDatabase(firstDatabase);
             assertNoActiveRuntime(firstDatabase);
-            assertTrue(snapshot(secondDatabase).runtimeActive());
+            assertTrue(mvccMaintenanceSnapshot(secondDatabase).runtimeActive());
             shutdownDatabase(secondDatabase);
             assertNoActiveRuntime(secondDatabase);
 
@@ -285,58 +283,17 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
         }
     }
 
-    private static DelosStorageMaintenanceSnapshot snapshot(String database) {
-        return DelosStorageDiagnosticsRegistry.mvccDatabaseMaintenanceSnapshot(
-                databasePath(database));
-    }
-
-    private static DelosStorageMaintenanceTableSnapshot tableSnapshot(
-            DelosStorageMaintenanceSnapshot snapshot,
-            long metadataContainerId) {
-        return snapshot.tableSnapshots().stream()
-                .filter(table -> table.metadataContainerId() == metadataContainerId)
-                .findFirst()
-                .orElseThrow(() -> new AssertionError(
-                        "No maintenance observation for container " + metadataContainerId
-                                + " in " + snapshot.tableSnapshots()));
-    }
-
     private static void assertNoActiveRuntime(String database) {
         try {
-            snapshot(database);
+            mvccMaintenanceSnapshot(database);
             fail("shutdown database must not retain a maintenance runtime");
         } catch (IllegalStateException expected) {
             // Diagnostics are weak and non-owning; shutdown removes the runtime.
         }
     }
 
-    private static void waitUntil(String failureMessage, Condition condition) throws Exception {
-        long deadline = System.nanoTime() + WAIT_TIMEOUT.toNanos();
-        Throwable lastFailure = null;
-        while (System.nanoTime() < deadline) {
-            try {
-                if (condition.evaluate()) {
-                    return;
-                }
-            } catch (Throwable transientFailure) {
-                lastFailure = transientFailure;
-            }
-            Thread.sleep(20L);
-        }
-        AssertionError failure = new AssertionError(failureMessage);
-        if (lastFailure != null) {
-            failure.initCause(lastFailure);
-        }
-        throw failure;
-    }
-
     private static MaintenanceProperties enableMaintenance() {
         return new MaintenanceProperties();
-    }
-
-    @FunctionalInterface
-    private interface Condition {
-        boolean evaluate() throws Exception;
     }
 
     private static final class MaintenanceProperties implements AutoCloseable {

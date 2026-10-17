@@ -505,29 +505,4 @@ public final class F08TransactionStatusVisibilityControlTest extends MvccSqlTest
             System.exit(93);
         }
     }
-    private static void waitUntil(String failureMessage, Condition condition) throws Exception {
-        long deadline = System.nanoTime() + Duration.ofSeconds(20L).toNanos();
-        Throwable lastFailure = null;
-        while (System.nanoTime() < deadline) {
-            try {
-                if (condition.evaluate()) {
-                    return;
-                }
-            } catch (Throwable transientFailure) {
-                lastFailure = transientFailure;
-            }
-            Thread.sleep(20L);
-        }
-        AssertionError failure = new AssertionError(failureMessage);
-        if (lastFailure != null) {
-            failure.initCause(lastFailure);
-        }
-        throw failure;
-    }
-
-    @FunctionalInterface
-    private interface Condition {
-        boolean evaluate() throws Exception;
-    }
-
 }
