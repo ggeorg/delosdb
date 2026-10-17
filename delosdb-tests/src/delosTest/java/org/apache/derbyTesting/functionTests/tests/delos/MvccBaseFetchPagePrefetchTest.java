@@ -105,15 +105,6 @@ public final class MvccBaseFetchPagePrefetchTest extends MvccSqlTestSupport {
     }
 
 
-    private static String runtimeStatistics(Connection connection) throws Exception {
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(
-                     "values syscs_util.syscs_get_runtimestatistics()")) {
-            assertTrue(resultSet.next());
-            return resultSet.getString(1);
-        }
-    }
-
     private static int successfulBatchRows(int[] counts) {
         int successful = 0;
         for (int count : counts) {

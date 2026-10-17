@@ -28,7 +28,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Savepoint;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -810,15 +809,6 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 "unexpected RawStore MVCC ordered-index eligibility; statistics=" + statistics,
                 expectOrderedIndex,
                 statistics.contains("delos_mvcc_rawstore_ordered_index"));
-    }
-
-    private static String runtimeStatistics(Connection connection) throws Exception {
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(
-                     "values syscs_util.syscs_get_runtimestatistics()")) {
-            assertTrue(resultSet.next());
-            return resultSet.getString(1);
-        }
     }
 
     private static void verifyCrashBoundary(

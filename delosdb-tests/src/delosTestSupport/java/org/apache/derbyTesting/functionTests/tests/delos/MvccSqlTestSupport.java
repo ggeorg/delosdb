@@ -143,6 +143,16 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
 
+    /** The statement statistics Derby kept for the connection's last statement. */
+    protected static String runtimeStatistics(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(
+                     "values syscs_util.syscs_get_runtimestatistics()")) {
+            assertTrue(resultSet.next());
+            return resultSet.getString(1);
+        }
+    }
+
     protected static SystemPropertyScope setSystemProperty(String propertyName, String value) {
         return new SystemPropertyScope(propertyName, value);
     }

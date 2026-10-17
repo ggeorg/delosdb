@@ -26,7 +26,6 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -219,15 +218,6 @@ public final class PrimaryKeyReadPhysicalAccountingTest extends MvccSqlTestSuppo
                 assertEquals(key * 3, resultSet.getInt(2));
                 assertFalse("primary key must return exactly one row", resultSet.next());
             }
-        }
-    }
-
-    private static String runtimeStatistics(Connection connection) throws Exception {
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(
-                     "values syscs_util.syscs_get_runtimestatistics()")) {
-            assertTrue(resultSet.next());
-            return resultSet.getString(1);
         }
     }
 
