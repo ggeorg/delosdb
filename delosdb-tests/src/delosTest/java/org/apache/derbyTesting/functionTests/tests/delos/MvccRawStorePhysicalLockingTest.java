@@ -24,8 +24,6 @@ import java.util.concurrent.TimeUnit;
 
 /** Row-level RawStore physical locking and transactional shared-index proofs. */
 public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final String BEFORE_RAW_COMMIT =
@@ -36,270 +34,264 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
     public void testReaderAndDifferentRowWritersDoNotSerializeOnTableContainers()
             throws Exception {
         String database = databaseName("mvcc-raw-store-physical-row-locking");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table physical_lock_t ("
-                                + "id int primary key, value int, email varchar(64) unique) "
-                                + "using delos_mvcc");
-                executeUpdate(setup,
-                        "insert into physical_lock_t values "
-                                + "(1, 10, 'one@example'), (2, 20, 'two@example')");
-                setup.commit();
-            }
-
-            try (Connection first = openDatabase(database, false);
-                 Connection second = openDatabase(database, false);
-                 Connection reader = openDatabase(database, false)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
-                reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                reader.setAutoCommit(false);
-
-                // Capture an explicit repeatable-read transaction snapshot before either writer.
-                assertRows(reader,
-                        "select id, value from physical_lock_t order by id",
-                        "1|10",
-                        "2|20");
-
-                executeUpdate(first,
-                        "update physical_lock_t set value = 11 where id = 1");
-                assertRows(first,
-                        "select value from physical_lock_t where id = 1",
-                        "11");
-
-                ExecutorService executor = Executors.newFixedThreadPool(2);
-                try {
-                    Future<String> differentRowWriter = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "update physical_lock_t set value = 22 where id = 2");
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState() + ':' + failure.getMessage();
-                        }
-                    });
-                    assertEquals(
-                            "a different stable row must not wait for a table-wide physical lock",
-                            "SUCCESS",
-                            differentRowWriter.get(10, TimeUnit.SECONDS));
-                    assertRows(second,
-                            "select value from physical_lock_t where id = 2",
-                            "22");
-
-                    Future<String> nonBlockingReader = executor.submit(() -> {
-                        try {
-                            assertRows(reader,
-                                    "select id, value from physical_lock_t order by id",
-                                    "1|10",
-                                    "2|20");
-                            return "SUCCESS";
-                        } catch (Throwable failure) {
-                            return failure.getClass().getName() + ':' + failure.getMessage();
-                        }
-                    });
-                    assertEquals(
-                            "a snapshot reader must not wait behind uncommitted physical writes",
-                            "SUCCESS",
-                            nonBlockingReader.get(10, TimeUnit.SECONDS));
-                } finally {
-                    executor.shutdownNow();
-                }
-
-                first.commit();
-                second.commit();
-
-                // The existing reader keeps its transaction snapshot.
-                assertRows(reader,
-                        "select id, value from physical_lock_t order by id",
-                        "1|10",
-                        "2|20");
-                reader.commit();
-                assertRows(reader,
-                        "select id, value from physical_lock_t order by id",
-                        "1|11",
-                        "2|22");
-                reader.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table physical_lock_t ("
+                            + "id int primary key, value int, email varchar(64) unique) "
+                            + "using delos_mvcc");
+            executeUpdate(setup,
+                    "insert into physical_lock_t values "
+                            + "(1, 10, 'one@example'), (2, 20, 'two@example')");
+            setup.commit();
         }
+
+        try (Connection first = openDatabase(database, false);
+             Connection second = openDatabase(database, false);
+             Connection reader = openDatabase(database, false)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+            reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            reader.setAutoCommit(false);
+
+            // Capture an explicit repeatable-read transaction snapshot before either writer.
+            assertRows(reader,
+                    "select id, value from physical_lock_t order by id",
+                    "1|10",
+                    "2|20");
+
+            executeUpdate(first,
+                    "update physical_lock_t set value = 11 where id = 1");
+            assertRows(first,
+                    "select value from physical_lock_t where id = 1",
+                    "11");
+
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+            try {
+                Future<String> differentRowWriter = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "update physical_lock_t set value = 22 where id = 2");
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState() + ':' + failure.getMessage();
+                    }
+                });
+                assertEquals(
+                        "a different stable row must not wait for a table-wide physical lock",
+                        "SUCCESS",
+                        differentRowWriter.get(10, TimeUnit.SECONDS));
+                assertRows(second,
+                        "select value from physical_lock_t where id = 2",
+                        "22");
+
+                Future<String> nonBlockingReader = executor.submit(() -> {
+                    try {
+                        assertRows(reader,
+                                "select id, value from physical_lock_t order by id",
+                                "1|10",
+                                "2|20");
+                        return "SUCCESS";
+                    } catch (Throwable failure) {
+                        return failure.getClass().getName() + ':' + failure.getMessage();
+                    }
+                });
+                assertEquals(
+                        "a snapshot reader must not wait behind uncommitted physical writes",
+                        "SUCCESS",
+                        nonBlockingReader.get(10, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+
+            first.commit();
+            second.commit();
+
+            // The existing reader keeps its transaction snapshot.
+            assertRows(reader,
+                    "select id, value from physical_lock_t order by id",
+                    "1|10",
+                    "2|20");
+            reader.commit();
+            assertRows(reader,
+                    "select id, value from physical_lock_t order by id",
+                    "1|11",
+                    "2|22");
+            reader.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testDifferentRowsWithSameIndexKeyDoNotAcquireNeighborRowLocks()
             throws Exception {
         String database = databaseName("mvcc-btree-no-neighbor-row-locking");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table neighbor_lock_t ("
-                                + "id int primary key, bucket int) using delos_mvcc");
-                executeUpdate(setup,
-                        "insert into neighbor_lock_t values (1, 10), (2, 20)");
-                setup.commit();
-            }
-
-            try (Connection first = openDatabase(database, false);
-                 Connection second = openDatabase(database, false)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
-
-                executeUpdate(first,
-                        "update neighbor_lock_t set bucket = 30 where id = 1");
-
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    Future<String> sameKeyWriter = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "update neighbor_lock_t set bucket = 30 where id = 2");
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState() + ':' + failure.getMessage();
-                        }
-                    });
-                    assertEquals(
-                            "a B-tree insert must not lock the neighboring MVCC base row",
-                            "SUCCESS",
-                            sameKeyWriter.get(10, TimeUnit.SECONDS));
-                } finally {
-                    executor.shutdownNow();
-                }
-
-                first.commit();
-                second.commit();
-            }
-
-            try (Connection observer = openDatabase(database, false)) {
-                assertRows(observer,
-                        "select id, bucket from neighbor_lock_t order by id",
-                        "1|30",
-                        "2|30");
-                observer.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table neighbor_lock_t ("
+                            + "id int primary key, bucket int) using delos_mvcc");
+            executeUpdate(setup,
+                    "insert into neighbor_lock_t values (1, 10), (2, 20)");
+            setup.commit();
         }
+
+        try (Connection first = openDatabase(database, false);
+             Connection second = openDatabase(database, false)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+
+            executeUpdate(first,
+                    "update neighbor_lock_t set bucket = 30 where id = 1");
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<String> sameKeyWriter = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "update neighbor_lock_t set bucket = 30 where id = 2");
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState() + ':' + failure.getMessage();
+                    }
+                });
+                assertEquals(
+                        "a B-tree insert must not lock the neighboring MVCC base row",
+                        "SUCCESS",
+                        sameKeyWriter.get(10, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+
+            first.commit();
+            second.commit();
+        }
+
+        try (Connection observer = openDatabase(database, false)) {
+            assertRows(observer,
+                    "select id, bucket from neighbor_lock_t order by id",
+                    "1|30",
+                    "2|30");
+            observer.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testSharedOrderedIndexMutationsFollowRawStoreTransactionBoundaries()
             throws Exception {
         String database = databaseName("mvcc-raw-store-shared-index-transaction");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table private_index_t (id int primary key, score int) using delos_mvcc");
-                executeUpdate(setup, "insert into private_index_t values (1, 10)");
-                setup.commit();
-            }
-
-            long originalIndex;
-            try (Connection observer = openDatabase(database, false)) {
-                originalIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        observer,
-                        "PRIVATE_INDEX_T");
-                assertTrue(originalIndex > 0L);
-                observer.commit();
-            }
-
-            // Shared-index records inserted after the savepoint are fully undone by RawStore.
-            try (Connection writer = openDatabase(database, false);
-                 Connection observer = openDatabase(database, false)) {
-                writer.setAutoCommit(false);
-                Savepoint beforeMutation = writer.setSavepoint("before_mutation");
-                executeUpdate(writer,
-                        "update private_index_t set score = 20 where id = 1");
-                assertRows(writer,
-                        "select id from private_index_t where score = 20",
-                        "1");
-                assertRows(observer,
-                        "select id from private_index_t where score = 10",
-                        "1");
-                assertRows(observer,
-                        "select id from private_index_t where score = 20");
-                assertEquals(originalIndex,
-                        MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                                observer,
-                                "PRIVATE_INDEX_T"));
-
-                writer.rollback(beforeMutation);
-                writer.releaseSavepoint(beforeMutation);
-                assertRows(writer,
-                        "select id from private_index_t where score = 10",
-                        "1");
-                writer.commit();
-                observer.commit();
-            }
-            try (Connection observer = openDatabase(database, false)) {
-                assertEquals(originalIndex,
-                        MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                                observer,
-                                "PRIVATE_INDEX_T"));
-                assertTrue(MvccRawStoreMetadataInspection.containerExists(
-                        observer,
-                        originalIndex));
-                observer.commit();
-            }
-
-            // A committed mutation keeps the same container and publishes only MVCC sequences.
-            long publishedIndex;
-            try (Connection writer = openDatabase(database, false);
-                 Connection observer = openDatabase(database, false)) {
-                writer.setAutoCommit(false);
-                executeUpdate(writer,
-                        "update private_index_t set score = 30 where id = 1");
-                Savepoint afterFirstUpdate = writer.setSavepoint("after_first_update");
-                executeUpdate(writer,
-                        "update private_index_t set score = 35 where id = 1");
-                writer.rollback(afterFirstUpdate);
-                writer.releaseSavepoint(afterFirstUpdate);
-                assertRows(writer,
-                        "select id from private_index_t where score = 30",
-                        "1");
-                assertRows(observer,
-                        "select id from private_index_t where score = 10",
-                        "1");
-                assertEquals(originalIndex,
-                        MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                                observer,
-                                "PRIVATE_INDEX_T"));
-                writer.commit();
-                observer.commit();
-            }
-            try (Connection observer = openDatabase(database, false)) {
-                assertRows(observer,
-                        "select id from private_index_t where score = 30",
-                        "1");
-                publishedIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        observer,
-                        "PRIVATE_INDEX_T");
-                assertEquals("normal writes must retain the published ordered-index container",
-                        originalIndex,
-                        publishedIndex);
-                assertTrue(MvccRawStoreMetadataInspection.containerExists(observer, publishedIndex));
-                observer.commit();
-            }
-
-            // Transaction rollback removes only the transaction's in-place index mutations.
-            try (Connection writer = openDatabase(database, false)) {
-                writer.setAutoCommit(false);
-                executeUpdate(writer,
-                        "update private_index_t set score = 40 where id = 1");
-                writer.rollback();
-            }
-            try (Connection observer = openDatabase(database, false)) {
-                assertRows(observer,
-                        "select id from private_index_t where score = 30",
-                        "1");
-                assertEquals(publishedIndex,
-                        MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                                observer,
-                                "PRIVATE_INDEX_T"));
-                observer.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table private_index_t (id int primary key, score int) using delos_mvcc");
+            executeUpdate(setup, "insert into private_index_t values (1, 10)");
+            setup.commit();
         }
+
+        long originalIndex;
+        try (Connection observer = openDatabase(database, false)) {
+            originalIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                    observer,
+                    "PRIVATE_INDEX_T");
+            assertTrue(originalIndex > 0L);
+            observer.commit();
+        }
+
+        // Shared-index records inserted after the savepoint are fully undone by RawStore.
+        try (Connection writer = openDatabase(database, false);
+             Connection observer = openDatabase(database, false)) {
+            writer.setAutoCommit(false);
+            Savepoint beforeMutation = writer.setSavepoint("before_mutation");
+            executeUpdate(writer,
+                    "update private_index_t set score = 20 where id = 1");
+            assertRows(writer,
+                    "select id from private_index_t where score = 20",
+                    "1");
+            assertRows(observer,
+                    "select id from private_index_t where score = 10",
+                    "1");
+            assertRows(observer,
+                    "select id from private_index_t where score = 20");
+            assertEquals(originalIndex,
+                    MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                            observer,
+                            "PRIVATE_INDEX_T"));
+
+            writer.rollback(beforeMutation);
+            writer.releaseSavepoint(beforeMutation);
+            assertRows(writer,
+                    "select id from private_index_t where score = 10",
+                    "1");
+            writer.commit();
+            observer.commit();
+        }
+        try (Connection observer = openDatabase(database, false)) {
+            assertEquals(originalIndex,
+                    MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                            observer,
+                            "PRIVATE_INDEX_T"));
+            assertTrue(MvccRawStoreMetadataInspection.containerExists(
+                    observer,
+                    originalIndex));
+            observer.commit();
+        }
+
+        // A committed mutation keeps the same container and publishes only MVCC sequences.
+        long publishedIndex;
+        try (Connection writer = openDatabase(database, false);
+             Connection observer = openDatabase(database, false)) {
+            writer.setAutoCommit(false);
+            executeUpdate(writer,
+                    "update private_index_t set score = 30 where id = 1");
+            Savepoint afterFirstUpdate = writer.setSavepoint("after_first_update");
+            executeUpdate(writer,
+                    "update private_index_t set score = 35 where id = 1");
+            writer.rollback(afterFirstUpdate);
+            writer.releaseSavepoint(afterFirstUpdate);
+            assertRows(writer,
+                    "select id from private_index_t where score = 30",
+                    "1");
+            assertRows(observer,
+                    "select id from private_index_t where score = 10",
+                    "1");
+            assertEquals(originalIndex,
+                    MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                            observer,
+                            "PRIVATE_INDEX_T"));
+            writer.commit();
+            observer.commit();
+        }
+        try (Connection observer = openDatabase(database, false)) {
+            assertRows(observer,
+                    "select id from private_index_t where score = 30",
+                    "1");
+            publishedIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                    observer,
+                    "PRIVATE_INDEX_T");
+            assertEquals("normal writes must retain the published ordered-index container",
+                    originalIndex,
+                    publishedIndex);
+            assertTrue(MvccRawStoreMetadataInspection.containerExists(observer, publishedIndex));
+            observer.commit();
+        }
+
+        // Transaction rollback removes only the transaction's in-place index mutations.
+        try (Connection writer = openDatabase(database, false)) {
+            writer.setAutoCommit(false);
+            executeUpdate(writer,
+                    "update private_index_t set score = 40 where id = 1");
+            writer.rollback();
+        }
+        try (Connection observer = openDatabase(database, false)) {
+            assertRows(observer,
+                    "select id from private_index_t where score = 30",
+                    "1");
+            assertEquals(publishedIndex,
+                    MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                            observer,
+                            "PRIVATE_INDEX_T"));
+            observer.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testSharedIndexRecoveryOnBothRawStoreCommitBoundaries()
@@ -312,8 +304,7 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
             throws Exception {
         String database = "mvcc_raw_store_physical_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection setup = DriverManager.getConnection(
+        try (Connection setup = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             setup.setAutoCommit(false);
             executeUpdate(setup,
@@ -400,25 +391,22 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                 .normalize()
                 .toString();
         long originalIndex;
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table physical_crash_t (id int primary key, value int) using delos_mvcc");
-                executeUpdate(setup,
-                        "insert into physical_crash_t values (1, 10)");
-                setup.commit();
-                originalIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        setup,
-                        "PHYSICAL_CRASH_T");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table physical_crash_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(setup,
+                    "insert into physical_crash_t values (1, 10)");
+            setup.commit();
+            originalIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                    setup,
+                    "PHYSICAL_CRASH_T");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -436,8 +424,7 @@ public final class MvccRawStorePhysicalLockingTest extends MvccSqlTestSupport {
                 expectedStatus,
                 process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             long recoveredIndex = MvccRawStoreMetadataInspection.orderedIndexContainerId(
                     recovered,
                     "PHYSICAL_CRASH_T");

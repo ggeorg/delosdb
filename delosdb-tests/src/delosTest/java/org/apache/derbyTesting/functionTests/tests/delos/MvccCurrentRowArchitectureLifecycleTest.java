@@ -32,8 +32,6 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
     private static final String DATABASE = "mvcc-current-row-architecture-lifecycle";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
-    private static final String VERTICAL_SLICE_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY =
             "delosdb.mvcc.currentRowReadCache.slots";
 
@@ -203,7 +201,6 @@ public final class MvccCurrentRowArchitectureLifecycleTest extends MvccSqlTestSu
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + VERTICAL_SLICE_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + "=" + failurePoint,
                 "-D" + CURRENT_ROW_READ_CACHE_SLOTS_PROPERTY + "=4096",
                 "-cp",

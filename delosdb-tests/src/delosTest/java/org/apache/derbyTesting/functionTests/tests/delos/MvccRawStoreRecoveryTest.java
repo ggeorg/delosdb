@@ -20,8 +20,6 @@ import java.util.concurrent.TimeUnit;
 
 /** Crash proofs on both sides of the inherited RawStore commit boundary. */
 public final class MvccRawStoreRecoveryTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
@@ -41,19 +39,16 @@ public final class MvccRawStoreRecoveryTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table recovery_raw_mvcc (id int, name varchar(64)) using delos_mvcc");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table recovery_raw_mvcc (id int, name varchar(64)) using delos_mvcc");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + "=" + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -71,14 +66,12 @@ public final class MvccRawStoreRecoveryTest extends MvccSqlTestSupport {
                 expectedStatus,
                 process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection recovered = openDatabase(database, false)) {
-                assertRows(recovered,
-                        "select id, name from recovery_raw_mvcc order by id",
-                        expectCommitted ? new String[] {"1|survivor"} : new String[0]);
-            }
-            shutdownDatabase(database);
+        try (Connection recovered = openDatabase(database, false)) {
+            assertRows(recovered,
+                    "select id, name from recovery_raw_mvcc order by id",
+                    expectCommitted ? new String[] {"1|survivor"} : new String[0]);
         }
+        shutdownDatabase(database);
     }
 
     private static String javaExecutable() {

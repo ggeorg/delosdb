@@ -27,8 +27,6 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 
 /** Shared heap/MVCC, file/memory RawStore page-I/O diagnostics proofs. */
 public final class SharedRawStoreIoDiagnosticsTest extends MvccSqlTestSupport {
-    private static final String RAWSTORE_ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
 
     public void testCounterLifecycleIsBoundedExactAndLeakFree() {
         DelosRawStoreIoMetrics metrics = new DelosRawStoreIoMetrics();
@@ -192,163 +190,154 @@ public final class SharedRawStoreIoDiagnosticsTest extends MvccSqlTestSupport {
     public void testFileDatabaseExposesOneSharedHeapAndMvccSnapshot()
             throws Exception {
         String database = databaseName("shared-rawstore-io-file");
-        try (SystemPropertyScope ignored =
-                     setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table io_heap_t (id int primary key, value int)");
-                executeUpdate(connection,
-                        "create table io_mvcc_t (id int primary key, value int) using delos_mvcc");
-                executeUpdate(connection, "insert into io_heap_t values (1, 10)");
-                executeUpdate(connection, "insert into io_mvcc_t values (1, 20)");
-                connection.commit();
-                assertRows(connection, "select value from io_heap_t", "10");
-                assertRows(connection, "select value from io_mvcc_t", "20");
-                connection.commit();
-                executeUpdate(connection,
-                        "call syscs_util.syscs_checkpoint_database()");
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table io_heap_t (id int primary key, value int)");
+            executeUpdate(connection,
+                    "create table io_mvcc_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(connection, "insert into io_heap_t values (1, 10)");
+            executeUpdate(connection, "insert into io_mvcc_t values (1, 20)");
+            connection.commit();
+            assertRows(connection, "select value from io_heap_t", "10");
+            assertRows(connection, "select value from io_mvcc_t", "20");
+            connection.commit();
+            executeUpdate(connection,
+                    "call syscs_util.syscs_checkpoint_database()");
 
-                DelosRawStoreIoSnapshot heap =
-                        DelosStorageDiagnosticsRegistry.heapDatabaseRawStoreIoSnapshot(
-                                databasePath(database));
-                DelosRawStoreIoSnapshot mvcc =
-                        DelosStorageDiagnosticsRegistry.mvccDatabaseRawStoreIoSnapshot(
-                                databasePath(database));
-                assertEquals(heap, mvcc);
-                assertTrue(heap.runtimeActive());
-                assertFalse(heap.memoryDatabase());
-                assertTrue(heap.databaseIdentity().startsWith("file:"));
-                assertTrue(heap.pageReadOperations() > 0L);
-                assertTrue(heap.pageReadBytes() > 0L);
-                assertTrue(heap.pageWriteOperations() > 0L);
-                assertTrue(heap.pageWriteBytes() > 0L);
-                assertTrue(heap.totalForceOperations() > 0L);
-                assertEquals(0L, heap.currentInFlightPageIo());
-                assertTrue(heap.peakInFlightPageIo() > 0L);
-                assertTrue(heap.peakOpenContainerHandles() > 0L);
-                assertTrue(heap.currentOpenContainerHandles()
-                        <= heap.peakOpenContainerHandles());
-
-                DelosRawStoreIoSnapshot unchanged =
-                        DelosStorageDiagnosticsRegistry.mvccDatabaseRawStoreIoSnapshot(
-                                databasePath(database));
-                assertEquals("diagnostic reads must not mutate storage counters",
-                        mvcc, unchanged);
-            } finally {
-                shutdownDatabase(database);
-            }
-            DelosRawStoreIoSnapshot stopped =
+            DelosRawStoreIoSnapshot heap =
                     DelosStorageDiagnosticsRegistry.heapDatabaseRawStoreIoSnapshot(
                             databasePath(database));
-            assertFalse(stopped.runtimeActive());
-            assertEquals(0L, stopped.currentInFlightPageIo());
-            assertEquals(0L, stopped.currentOpenContainerHandles());
-            assertEquals(0L, stopped.unclosedContainerHandlesAtShutdown());
+            DelosRawStoreIoSnapshot mvcc =
+                    DelosStorageDiagnosticsRegistry.mvccDatabaseRawStoreIoSnapshot(
+                            databasePath(database));
+            assertEquals(heap, mvcc);
+            assertTrue(heap.runtimeActive());
+            assertFalse(heap.memoryDatabase());
+            assertTrue(heap.databaseIdentity().startsWith("file:"));
+            assertTrue(heap.pageReadOperations() > 0L);
+            assertTrue(heap.pageReadBytes() > 0L);
+            assertTrue(heap.pageWriteOperations() > 0L);
+            assertTrue(heap.pageWriteBytes() > 0L);
+            assertTrue(heap.totalForceOperations() > 0L);
+            assertEquals(0L, heap.currentInFlightPageIo());
+            assertTrue(heap.peakInFlightPageIo() > 0L);
+            assertTrue(heap.peakOpenContainerHandles() > 0L);
+            assertTrue(heap.currentOpenContainerHandles()
+                    <= heap.peakOpenContainerHandles());
+
+            DelosRawStoreIoSnapshot unchanged =
+                    DelosStorageDiagnosticsRegistry.mvccDatabaseRawStoreIoSnapshot(
+                            databasePath(database));
+            assertEquals("diagnostic reads must not mutate storage counters",
+                    mvcc, unchanged);
+        } finally {
+            shutdownDatabase(database);
         }
+        DelosRawStoreIoSnapshot stopped =
+                DelosStorageDiagnosticsRegistry.heapDatabaseRawStoreIoSnapshot(
+                        databasePath(database));
+        assertFalse(stopped.runtimeActive());
+        assertEquals(0L, stopped.currentInFlightPageIo());
+        assertEquals(0L, stopped.currentOpenContainerHandles());
+        assertEquals(0L, stopped.unclosedContainerHandlesAtShutdown());
     }
 
     public void testMemoryDatabaseUsesTheSameSnapshotShapeAndMetadataForcePath()
             throws Exception {
         String database = "shared-rawstore-io-memory-" + System.nanoTime();
-        try (SystemPropertyScope ignored =
-                     setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
-            try (Connection connection = DriverManager.getConnection(
-                    "jdbc:derby:memory:" + database + ";create=true")) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table io_memory_heap_t (id int primary key, value int)");
-                executeUpdate(connection,
-                        "create table io_memory_mvcc_t (id int primary key, value int) using delos_mvcc");
-                executeUpdate(connection,
-                        "insert into io_memory_heap_t values (1, 30)");
-                executeUpdate(connection,
-                        "insert into io_memory_mvcc_t values (1, 40)");
-                connection.commit();
-                assertRows(connection,
-                        "select value from io_memory_mvcc_t", "40");
-                connection.commit();
-                executeUpdate(connection,
-                        "call syscs_util.syscs_checkpoint_database()");
+        try (Connection connection = DriverManager.getConnection(
+                "jdbc:derby:memory:" + database + ";create=true")) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table io_memory_heap_t (id int primary key, value int)");
+            executeUpdate(connection,
+                    "create table io_memory_mvcc_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(connection,
+                    "insert into io_memory_heap_t values (1, 30)");
+            executeUpdate(connection,
+                    "insert into io_memory_mvcc_t values (1, 40)");
+            connection.commit();
+            assertRows(connection,
+                    "select value from io_memory_mvcc_t", "40");
+            connection.commit();
+            executeUpdate(connection,
+                    "call syscs_util.syscs_checkpoint_database()");
 
-                DelosRawStoreIoSnapshot heap =
-                        DelosStorageDiagnosticsRegistry.heapMemoryDatabaseRawStoreIoSnapshot(
-                                database);
-                DelosRawStoreIoSnapshot mvcc =
-                        DelosStorageDiagnosticsRegistry.mvccMemoryDatabaseRawStoreIoSnapshot(
-                                database);
-                assertEquals(heap, mvcc);
-                assertTrue(heap.runtimeActive());
-                assertTrue(heap.memoryDatabase());
-                assertTrue(heap.databaseIdentity().startsWith("memory:"));
-                // A newly created memory database may satisfy logical reads
-                // entirely from the page cache. Requiring a physical read
-                // would couple this diagnostics proof to cache eviction policy.
-                assertTrue(heap.pageWriteOperations() > 0L);
-                assertTrue(heap.pageWriteBytes() > 0L);
-                assertTrue(heap.metadataForceOperations() > 0L);
-                assertEquals(0L, heap.currentInFlightPageIo());
-                assertTrue(heap.peakInFlightPageIo() > 0L);
-            } finally {
-                shutdownNamedMemoryDatabase(database);
-            }
-            DelosRawStoreIoSnapshot stopped =
+            DelosRawStoreIoSnapshot heap =
                     DelosStorageDiagnosticsRegistry.heapMemoryDatabaseRawStoreIoSnapshot(
                             database);
-            assertFalse(stopped.runtimeActive());
-            assertTrue(stopped.memoryDatabase());
-            assertEquals(0L, stopped.currentInFlightPageIo());
-            assertEquals(0L, stopped.currentOpenContainerHandles());
-            assertEquals(0L, stopped.unclosedContainerHandlesAtShutdown());
+            DelosRawStoreIoSnapshot mvcc =
+                    DelosStorageDiagnosticsRegistry.mvccMemoryDatabaseRawStoreIoSnapshot(
+                            database);
+            assertEquals(heap, mvcc);
+            assertTrue(heap.runtimeActive());
+            assertTrue(heap.memoryDatabase());
+            assertTrue(heap.databaseIdentity().startsWith("memory:"));
+            // A newly created memory database may satisfy logical reads
+            // entirely from the page cache. Requiring a physical read
+            // would couple this diagnostics proof to cache eviction policy.
+            assertTrue(heap.pageWriteOperations() > 0L);
+            assertTrue(heap.pageWriteBytes() > 0L);
+            assertTrue(heap.metadataForceOperations() > 0L);
+            assertEquals(0L, heap.currentInFlightPageIo());
+            assertTrue(heap.peakInFlightPageIo() > 0L);
+        } finally {
+            shutdownNamedMemoryDatabase(database);
         }
+        DelosRawStoreIoSnapshot stopped =
+                DelosStorageDiagnosticsRegistry.heapMemoryDatabaseRawStoreIoSnapshot(
+                        database);
+        assertFalse(stopped.runtimeActive());
+        assertTrue(stopped.memoryDatabase());
+        assertEquals(0L, stopped.currentInFlightPageIo());
+        assertEquals(0L, stopped.currentOpenContainerHandles());
+        assertEquals(0L, stopped.unclosedContainerHandlesAtShutdown());
     }
 
     public void testTwoFileDatabasesKeepIndependentCounters() throws Exception {
         String firstDatabase = databaseName("shared-rawstore-io-isolation-a");
         String secondDatabase = databaseName("shared-rawstore-io-isolation-b");
-        try (SystemPropertyScope ignored =
-                     setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
-            try (Connection first = openDatabase(firstDatabase, true);
-                 Connection second = openDatabase(secondDatabase, true)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
-                executeUpdate(first,
-                        "create table io_isolation_a (id int primary key, value int)");
-                executeUpdate(second,
-                        "create table io_isolation_b (id int primary key, value int)");
-                first.commit();
-                second.commit();
-                executeUpdate(first,
-                        "call syscs_util.syscs_checkpoint_database()");
-                executeUpdate(second,
-                        "call syscs_util.syscs_checkpoint_database()");
+        try (Connection first = openDatabase(firstDatabase, true);
+             Connection second = openDatabase(secondDatabase, true)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+            executeUpdate(first,
+                    "create table io_isolation_a (id int primary key, value int)");
+            executeUpdate(second,
+                    "create table io_isolation_b (id int primary key, value int)");
+            first.commit();
+            second.commit();
+            executeUpdate(first,
+                    "call syscs_util.syscs_checkpoint_database()");
+            executeUpdate(second,
+                    "call syscs_util.syscs_checkpoint_database()");
 
-                DelosRawStoreIoSnapshot firstBefore = snapshot(firstDatabase);
-                DelosRawStoreIoSnapshot secondBefore = snapshot(secondDatabase);
-                assertFalse(firstBefore.databaseIdentity()
-                        .equals(secondBefore.databaseIdentity()));
+            DelosRawStoreIoSnapshot firstBefore = snapshot(firstDatabase);
+            DelosRawStoreIoSnapshot secondBefore = snapshot(secondDatabase);
+            assertFalse(firstBefore.databaseIdentity()
+                    .equals(secondBefore.databaseIdentity()));
 
-                for (int id = 1; id <= 64; id++) {
-                    executeUpdate(first,
-                            "insert into io_isolation_a values ("
-                                    + id + ", " + (id * 10) + ")");
-                }
-                first.commit();
+            for (int id = 1; id <= 64; id++) {
                 executeUpdate(first,
-                        "call syscs_util.syscs_checkpoint_database()");
-
-                DelosRawStoreIoSnapshot firstAfter = snapshot(firstDatabase);
-                DelosRawStoreIoSnapshot secondAfter = snapshot(secondDatabase);
-                assertTrue(firstAfter.pageWriteOperations()
-                        > firstBefore.pageWriteOperations());
-                assertEquals(secondBefore.pageWriteOperations(),
-                        secondAfter.pageWriteOperations());
-                assertEquals(secondBefore.pageWriteBytes(),
-                        secondAfter.pageWriteBytes());
-            } finally {
-                shutdownDatabase(firstDatabase);
-                shutdownDatabase(secondDatabase);
+                        "insert into io_isolation_a values ("
+                                + id + ", " + (id * 10) + ")");
             }
+            first.commit();
+            executeUpdate(first,
+                    "call syscs_util.syscs_checkpoint_database()");
+
+            DelosRawStoreIoSnapshot firstAfter = snapshot(firstDatabase);
+            DelosRawStoreIoSnapshot secondAfter = snapshot(secondDatabase);
+            assertTrue(firstAfter.pageWriteOperations()
+                    > firstBefore.pageWriteOperations());
+            assertEquals(secondBefore.pageWriteOperations(),
+                    secondAfter.pageWriteOperations());
+            assertEquals(secondBefore.pageWriteBytes(),
+                    secondAfter.pageWriteBytes());
+        } finally {
+            shutdownDatabase(firstDatabase);
+            shutdownDatabase(secondDatabase);
         }
     }
 

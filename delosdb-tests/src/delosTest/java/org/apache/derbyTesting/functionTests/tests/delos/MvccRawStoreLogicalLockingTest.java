@@ -29,350 +29,338 @@ import java.util.concurrent.TimeUnit;
 
 /** Transaction-duration logical row, unique-key, and schema locking proofs. */
 public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
 
     public void testStableRowLocksHoldThroughCommitAndRollback() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-row-lock");
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table row_lock_anchor (id int) using delos_mvcc");
-                executeUpdate(setup,
-                        "create table row_lock_t (id int primary key, value int) using delos_mvcc");
-                executeUpdate(setup, "insert into row_lock_anchor values (1)");
-                executeUpdate(setup, "insert into row_lock_t values (1, 10)");
-                setup.commit();
-            }
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table row_lock_anchor (id int) using delos_mvcc");
+            executeUpdate(setup,
+                    "create table row_lock_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(setup, "insert into row_lock_anchor values (1)");
+            executeUpdate(setup, "insert into row_lock_t values (1, 10)");
+            setup.commit();
+        }
 
-            try (Connection first = openDatabase(database, false);
-                 Connection second = openDatabase(database, false);
-                 Connection observer = openDatabase(database, false)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
+        try (Connection first = openDatabase(database, false);
+             Connection second = openDatabase(database, false);
+             Connection observer = openDatabase(database, false)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
 
-                executeUpdate(first, "update row_lock_t set value = value + 1 where id = 1");
-                assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "S", "GRANT");
-                assertLogicalLock(observer, "DELOS_MVCC_ROW[", "X", "GRANT");
+            executeUpdate(first, "update row_lock_t set value = value + 1 where id = 1");
+            assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "S", "GRANT");
+            assertLogicalLock(observer, "DELOS_MVCC_ROW[", "X", "GRANT");
 
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    CountDownLatch started = new CountDownLatch(1);
-                    Future<String> readCommittedWriter = executor.submit(() -> {
-                        started.countDown();
-                        try {
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                CountDownLatch started = new CountDownLatch(1);
+                Future<String> readCommittedWriter = executor.submit(() -> {
+                    started.countDown();
+                    try {
+                        executeUpdate(second,
+                                "update row_lock_t set value = value + 1 where id = 1");
+                        second.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertTrue(started.await(5, TimeUnit.SECONDS));
+                assertStillWaiting(readCommittedWriter,
+                        "READ COMMITTED same-row writer must wait for the stable-row lock");
+                first.commit();
+                assertEquals("SUCCESS", readCommittedWriter.get(15, TimeUnit.SECONDS));
+                assertRows(observer, "select value from row_lock_t where id = 1", "12");
+
+                executeUpdate(first, "update row_lock_t set value = 30 where id = 1");
+                first.commit();
+                executeUpdate(first, "update row_lock_t set value = 31 where id = 1");
+                Future<String> noLongerQualifies = executor.submit(() -> {
+                    try {
+                        int count = executeUpdate(second,
+                                "update row_lock_t set value = 99 "
+                                        + "where id = 1 and value = 30");
+                        second.commit();
+                        return "COUNT=" + count;
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertStillWaiting(noLongerQualifies,
+                        "READ COMMITTED writer must wait before re-qualifying the row");
+                first.commit();
+                assertEquals("COUNT=0", noLongerQualifies.get(15, TimeUnit.SECONDS));
+                assertRows(observer, "select value from row_lock_t where id = 1", "31");
+
+                executeUpdate(first, "update row_lock_t set value = 40 where id = 1");
+                Future<String> repeatedReadCommittedWriter = executor.submit(() -> {
+                    try {
+                        for (int update = 0; update < 10; update++) {
                             executeUpdate(second,
                                     "update row_lock_t set value = value + 1 where id = 1");
-                            second.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
                         }
-                    });
-                    assertTrue(started.await(5, TimeUnit.SECONDS));
-                    assertStillWaiting(readCommittedWriter,
-                            "READ COMMITTED same-row writer must wait for the stable-row lock");
-                    first.commit();
-                    assertEquals("SUCCESS", readCommittedWriter.get(15, TimeUnit.SECONDS));
-                    assertRows(observer, "select value from row_lock_t where id = 1", "12");
+                        second.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertStillWaiting(repeatedReadCommittedWriter,
+                        "READ COMMITTED repeated writer must wait for the stable-row lock");
+                first.commit();
+                assertEquals("SUCCESS", repeatedReadCommittedWriter.get(15, TimeUnit.SECONDS));
+                assertRows(observer, "select value from row_lock_t where id = 1", "50");
 
-                    executeUpdate(first, "update row_lock_t set value = 30 where id = 1");
-                    first.commit();
-                    executeUpdate(first, "update row_lock_t set value = 31 where id = 1");
-                    Future<String> noLongerQualifies = executor.submit(() -> {
-                        try {
-                            int count = executeUpdate(second,
-                                    "update row_lock_t set value = 99 "
-                                            + "where id = 1 and value = 30");
-                            second.commit();
-                            return "COUNT=" + count;
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(noLongerQualifies,
-                            "READ COMMITTED writer must wait before re-qualifying the row");
-                    first.commit();
-                    assertEquals("COUNT=0", noLongerQualifies.get(15, TimeUnit.SECONDS));
-                    assertRows(observer, "select value from row_lock_t where id = 1", "31");
-
-                    executeUpdate(first, "update row_lock_t set value = 40 where id = 1");
-                    Future<String> repeatedReadCommittedWriter = executor.submit(() -> {
-                        try {
-                            for (int update = 0; update < 10; update++) {
-                                executeUpdate(second,
-                                        "update row_lock_t set value = value + 1 where id = 1");
-                            }
-                            second.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(repeatedReadCommittedWriter,
-                            "READ COMMITTED repeated writer must wait for the stable-row lock");
-                    first.commit();
-                    assertEquals("SUCCESS", repeatedReadCommittedWriter.get(15, TimeUnit.SECONDS));
-                    assertRows(observer, "select value from row_lock_t where id = 1", "50");
-
-                    first.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                    second.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                    assertRows(second, "select id from row_lock_anchor", "1");
-                    executeUpdate(first, "update row_lock_t set value = 21 where id = 1");
-                    Future<String> staleWriter = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "update row_lock_t set value = 22 where id = 1");
-                            return "SUCCESS";
-                        } catch (SQLException expected) {
-                            return expected.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(staleWriter,
-                            "REPEATABLE READ same-row writer must wait for the stable-row lock");
-                    first.commit();
-                    assertEquals("40001", staleWriter.get(15, TimeUnit.SECONDS));
-                    second.rollback();
-                } finally {
-                    executor.shutdownNow();
-                }
+                first.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                second.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+                assertRows(second, "select id from row_lock_anchor", "1");
+                executeUpdate(first, "update row_lock_t set value = 21 where id = 1");
+                Future<String> staleWriter = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "update row_lock_t set value = 22 where id = 1");
+                        return "SUCCESS";
+                    } catch (SQLException expected) {
+                        return expected.getSQLState();
+                    }
+                });
+                assertStillWaiting(staleWriter,
+                        "REPEATABLE READ same-row writer must wait for the stable-row lock");
+                first.commit();
+                assertEquals("40001", staleWriter.get(15, TimeUnit.SECONDS));
+                second.rollback();
+            } finally {
+                executor.shutdownNow();
             }
-            shutdownDatabase(database);
         }
+        shutdownDatabase(database);
     }
 
     public void testUniqueKeyLocksSurviveSavepointRollbackAndCommit() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-key-lock");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table key_lock_t ("
-                                + "id int primary key, "
-                                + "email varchar(64) unique, "
-                                + "code int unique) using delos_mvcc");
-                setup.commit();
-            }
-
-            try (Connection first = openDatabase(database, false);
-                 Connection second = openDatabase(database, false);
-                 Connection observer = openDatabase(database, false)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    executeUpdate(first,
-                            "insert into key_lock_t values (1, 'committed@example', 100)");
-                    assertLogicalLock(observer, "DELOS_MVCC_KEY[", "X", "GRANT");
-                    Future<String> duplicateAfterCommit = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "insert into key_lock_t values (2, 'committed@example', 200)");
-                            return "SUCCESS";
-                        } catch (SQLException expected) {
-                            return expected.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(duplicateAfterCommit,
-                            "duplicate writer must wait for the transaction-duration key lock");
-                    first.commit();
-                    assertEquals("23505", duplicateAfterCommit.get(15, TimeUnit.SECONDS));
-                    second.rollback();
-
-                    Savepoint savepoint = first.setSavepoint("before_key");
-                    executeUpdate(first,
-                            "insert into key_lock_t values (3, 'savepoint@example', 300)");
-                    first.rollback(savepoint);
-                    first.releaseSavepoint(savepoint);
-                    assertRows(first,
-                            "select id from key_lock_t where email = 'savepoint@example'");
-                    assertLogicalLock(observer, "DELOS_MVCC_KEY[", "X", "GRANT");
-
-                    Future<String> afterSavepoint = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "insert into key_lock_t values (4, 'savepoint@example', 400)");
-                            second.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(afterSavepoint,
-                            "savepoint rollback must not release transaction-duration key locks");
-                    first.commit();
-                    assertEquals("SUCCESS", afterSavepoint.get(15, TimeUnit.SECONDS));
-                } finally {
-                    executor.shutdownNow();
-                }
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table key_lock_t ("
+                            + "id int primary key, "
+                            + "email varchar(64) unique, "
+                            + "code int unique) using delos_mvcc");
+            setup.commit();
         }
+
+        try (Connection first = openDatabase(database, false);
+             Connection second = openDatabase(database, false);
+             Connection observer = openDatabase(database, false)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                executeUpdate(first,
+                        "insert into key_lock_t values (1, 'committed@example', 100)");
+                assertLogicalLock(observer, "DELOS_MVCC_KEY[", "X", "GRANT");
+                Future<String> duplicateAfterCommit = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "insert into key_lock_t values (2, 'committed@example', 200)");
+                        return "SUCCESS";
+                    } catch (SQLException expected) {
+                        return expected.getSQLState();
+                    }
+                });
+                assertStillWaiting(duplicateAfterCommit,
+                        "duplicate writer must wait for the transaction-duration key lock");
+                first.commit();
+                assertEquals("23505", duplicateAfterCommit.get(15, TimeUnit.SECONDS));
+                second.rollback();
+
+                Savepoint savepoint = first.setSavepoint("before_key");
+                executeUpdate(first,
+                        "insert into key_lock_t values (3, 'savepoint@example', 300)");
+                first.rollback(savepoint);
+                first.releaseSavepoint(savepoint);
+                assertRows(first,
+                        "select id from key_lock_t where email = 'savepoint@example'");
+                assertLogicalLock(observer, "DELOS_MVCC_KEY[", "X", "GRANT");
+
+                Future<String> afterSavepoint = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "insert into key_lock_t values (4, 'savepoint@example', 400)");
+                        second.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertStillWaiting(afterSavepoint,
+                        "savepoint rollback must not release transaction-duration key locks");
+                first.commit();
+                assertEquals("SUCCESS", afterSavepoint.get(15, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+        shutdownDatabase(database);
     }
 
     public void testSameKeyDeleteReinsertRetainsUniqueKeyLocks() throws Exception {
         String database = databaseName("mvcc-raw-store-delete-reinsert-key-lock");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table delete_reinsert_key_lock_t ("
-                                + "id int primary key, "
-                                + "email varchar(64) unique, "
-                                + "code int unique) using delos_mvcc");
-                executeUpdate(setup,
-                        "insert into delete_reinsert_key_lock_t "
-                                + "values (1, 'retained@example', 100)");
-                setup.commit();
-            }
-
-            try (Connection first = openDatabase(database, false);
-                 Connection second = openDatabase(database, false)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
-
-                executeUpdate(first,
-                        "delete from delete_reinsert_key_lock_t where id = 1");
-                executeUpdate(first,
-                        "insert into delete_reinsert_key_lock_t "
-                                + "values (1, 'retained@example', 100)");
-
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    Future<String> duplicate = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "insert into delete_reinsert_key_lock_t "
-                                            + "values (2, 'retained@example', 200)");
-                            return "SUCCESS";
-                        } catch (SQLException expected) {
-                            return expected.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(duplicate,
-                            "same-key reinsert must retain its transaction-duration unique-key lock");
-                    first.commit();
-                    assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
-                    second.rollback();
-                } finally {
-                    executor.shutdownNow();
-                }
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table delete_reinsert_key_lock_t ("
+                            + "id int primary key, "
+                            + "email varchar(64) unique, "
+                            + "code int unique) using delos_mvcc");
+            executeUpdate(setup,
+                    "insert into delete_reinsert_key_lock_t "
+                            + "values (1, 'retained@example', 100)");
+            setup.commit();
         }
+
+        try (Connection first = openDatabase(database, false);
+             Connection second = openDatabase(database, false)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+
+            executeUpdate(first,
+                    "delete from delete_reinsert_key_lock_t where id = 1");
+            executeUpdate(first,
+                    "insert into delete_reinsert_key_lock_t "
+                            + "values (1, 'retained@example', 100)");
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<String> duplicate = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "insert into delete_reinsert_key_lock_t "
+                                        + "values (2, 'retained@example', 200)");
+                        return "SUCCESS";
+                    } catch (SQLException expected) {
+                        return expected.getSQLState();
+                    }
+                });
+                assertStillWaiting(duplicate,
+                        "same-key reinsert must retain its transaction-duration unique-key lock");
+                first.commit();
+                assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
+                second.rollback();
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+        shutdownDatabase(database);
     }
 
     public void testSchemaLocksSerializeUniqueDdlAndDml() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-schema-lock");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table schema_lock_t (id int primary key, email varchar(64)) using delos_mvcc");
-                setup.commit();
-            }
-
-            try (Connection dml = openDatabase(database, false);
-                 Connection ddl = openDatabase(database, false);
-                 Connection observer = openDatabase(database, false)) {
-                dml.setAutoCommit(false);
-                ddl.setAutoCommit(false);
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    executeUpdate(dml,
-                            "insert into schema_lock_t values (1, 'one@example')");
-                    assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "S", "GRANT");
-                    Future<String> addConstraint = executor.submit(() -> {
-                        try {
-                            executeUpdate(ddl,
-                                    "alter table schema_lock_t add constraint uq_schema_email unique (email)");
-                            ddl.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(addConstraint,
-                            "unique DDL must wait for active shared table-schema locks");
-                    dml.commit();
-                    assertEquals("SUCCESS", addConstraint.get(20, TimeUnit.SECONDS));
-
-                    executeUpdate(ddl,
-                            "alter table schema_lock_t drop constraint uq_schema_email");
-                    assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "X", "GRANT");
-                    Future<String> blockedDml = executor.submit(() -> {
-                        try {
-                            executeUpdate(dml,
-                                    "insert into schema_lock_t values (2, 'two@example')");
-                            dml.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(blockedDml,
-                            "DML must wait for active exclusive table-schema locks");
-                    ddl.rollback();
-                    assertEquals("SUCCESS", blockedDml.get(20, TimeUnit.SECONDS));
-
-                    assertDuplicateKey(() -> executeUpdate(
-                            dml,
-                            "insert into schema_lock_t values (3, 'one@example')"));
-                    dml.rollback();
-                } finally {
-                    executor.shutdownNow();
-                }
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table schema_lock_t (id int primary key, email varchar(64)) using delos_mvcc");
+            setup.commit();
         }
+
+        try (Connection dml = openDatabase(database, false);
+             Connection ddl = openDatabase(database, false);
+             Connection observer = openDatabase(database, false)) {
+            dml.setAutoCommit(false);
+            ddl.setAutoCommit(false);
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                executeUpdate(dml,
+                        "insert into schema_lock_t values (1, 'one@example')");
+                assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "S", "GRANT");
+                Future<String> addConstraint = executor.submit(() -> {
+                    try {
+                        executeUpdate(ddl,
+                                "alter table schema_lock_t add constraint uq_schema_email unique (email)");
+                        ddl.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertStillWaiting(addConstraint,
+                        "unique DDL must wait for active shared table-schema locks");
+                dml.commit();
+                assertEquals("SUCCESS", addConstraint.get(20, TimeUnit.SECONDS));
+
+                executeUpdate(ddl,
+                        "alter table schema_lock_t drop constraint uq_schema_email");
+                assertLogicalLock(observer, "DELOS_MVCC_SCHEMA[", "X", "GRANT");
+                Future<String> blockedDml = executor.submit(() -> {
+                    try {
+                        executeUpdate(dml,
+                                "insert into schema_lock_t values (2, 'two@example')");
+                        dml.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertStillWaiting(blockedDml,
+                        "DML must wait for active exclusive table-schema locks");
+                ddl.rollback();
+                assertEquals("SUCCESS", blockedDml.get(20, TimeUnit.SECONDS));
+
+                assertDuplicateKey(() -> executeUpdate(
+                        dml,
+                        "insert into schema_lock_t values (3, 'one@example')"));
+                dml.rollback();
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+        shutdownDatabase(database);
     }
 
     public void testAbortCrashReopenAndMemoryReleaseLogicalLocks() throws Exception {
         String database = databaseName("mvcc-raw-store-logical-lock-release");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table release_lock_t (id int primary key, email varchar(64) unique) using delos_mvcc");
-                setup.commit();
-            }
-
-            Connection holder = openDatabase(database, false);
-            try (Connection waiter = openDatabase(database, false)) {
-                holder.setAutoCommit(false);
-                waiter.setAutoCommit(false);
-                executeUpdate(holder,
-                        "insert into release_lock_t values (1, 'released@example')");
-
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    Future<String> afterClose = executor.submit(() -> {
-                        try {
-                            executeUpdate(waiter,
-                                    "insert into release_lock_t values (2, 'released@example')");
-                            waiter.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    assertStillWaiting(afterClose,
-                            "transaction abort must be the logical-lock release boundary");
-                    holder.rollback();
-                    holder.close();
-                    holder = null;
-                    assertEquals("SUCCESS", afterClose.get(15, TimeUnit.SECONDS));
-                } finally {
-                    executor.shutdownNow();
-                }
-            } finally {
-                if (holder != null) {
-                    holder.close();
-                }
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table release_lock_t (id int primary key, email varchar(64) unique) using delos_mvcc");
+            setup.commit();
         }
+
+        Connection holder = openDatabase(database, false);
+        try (Connection waiter = openDatabase(database, false)) {
+            holder.setAutoCommit(false);
+            waiter.setAutoCommit(false);
+            executeUpdate(holder,
+                    "insert into release_lock_t values (1, 'released@example')");
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                Future<String> afterClose = executor.submit(() -> {
+                    try {
+                        executeUpdate(waiter,
+                                "insert into release_lock_t values (2, 'released@example')");
+                        waiter.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                assertStillWaiting(afterClose,
+                        "transaction abort must be the logical-lock release boundary");
+                holder.rollback();
+                holder.close();
+                holder = null;
+                assertEquals("SUCCESS", afterClose.get(15, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+        } finally {
+            if (holder != null) {
+                holder.close();
+            }
+        }
+        shutdownDatabase(database);
 
         verifyAbruptProcessExitReleasesLogicalLocks();
         verifyMemoryDatabaseLogicalLocks();
@@ -384,15 +372,13 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table crash_lock_t (id int primary key, email varchar(64) unique) using delos_mvcc");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table crash_lock_t (id int primary key, email varchar(64) unique) using delos_mvcc");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
@@ -401,7 +387,6 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                 "java.base/sun.security.action=ALL-UNNAMED",
                 "--add-opens",
                 "java.base/java.nio=ALL-UNNAMED",
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-cp",
                 System.getProperty("java.class.path"),
                 CrashWorker.class.getName(),
@@ -418,8 +403,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                 93,
                 process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             recovered.setAutoCommit(false);
             executeUpdate(recovered,
                     "insert into crash_lock_t values (2, 'crash@example')");
@@ -435,8 +419,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
     private static void verifyMemoryDatabaseLogicalLocks() throws Exception {
         String memoryDatabase = "mvcc_raw_store_logical_lock_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection first = DriverManager.getConnection(
+        try (Connection first = DriverManager.getConnection(
                      "jdbc:derby:memory:" + memoryDatabase + ";create=true");
              Connection second = DriverManager.getConnection(
                      "jdbc:derby:memory:" + memoryDatabase);

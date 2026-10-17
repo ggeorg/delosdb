@@ -22,128 +22,122 @@ import java.util.concurrent.TimeUnit;
 
 /** RawStore version-chain, UPDATE, DELETE, savepoint, recovery, and memory proofs. */
 public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final long CURRENT_END_SEQUENCE = Long.MAX_VALUE;
 
     public void testUpdateDeleteCommitRollbackSavepointAndReopen() throws Exception {
         String database = databaseName("mvcc-raw-store-update-delete-file");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table mutation_t (id int, name varchar(64), note varchar(64)) using delos_mvcc");
-                executeUpdate(connection, "insert into mutation_t values (1, 'one', 'base')");
-                executeUpdate(connection, "insert into mutation_t values (2, 'two', 'base')");
-                executeUpdate(connection, "insert into mutation_t values (3, 'three', 'base')");
-                connection.commit();
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table mutation_t (id int, name varchar(64), note varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into mutation_t values (1, 'one', 'base')");
+            executeUpdate(connection, "insert into mutation_t values (2, 'two', 'base')");
+            executeUpdate(connection, "insert into mutation_t values (3, 'three', 'base')");
+            connection.commit();
 
-                assertEquals(1, executeUpdate(connection,
-                        "update mutation_t set name = 'rollback', note = 'changed' where id = 1"));
-                assertRows(connection,
-                        "select id, name, note from mutation_t where id = 1",
-                        "1|rollback|changed");
-                connection.rollback();
-                assertRows(connection,
-                        "select id, name, note from mutation_t where id = 1",
-                        "1|one|base");
-                connection.commit();
+            assertEquals(1, executeUpdate(connection,
+                    "update mutation_t set name = 'rollback', note = 'changed' where id = 1"));
+            assertRows(connection,
+                    "select id, name, note from mutation_t where id = 1",
+                    "1|rollback|changed");
+            connection.rollback();
+            assertRows(connection,
+                    "select id, name, note from mutation_t where id = 1",
+                    "1|one|base");
+            connection.commit();
 
-                assertEquals(1, executeUpdate(connection,
-                        "update mutation_t set name = 'first' where id = 1"));
-                assertEquals(1, executeUpdate(connection,
-                        "update mutation_t set name = 'second', note = 'committed' where id = 1"));
-                assertEquals(1, executeUpdate(connection,
-                        "delete from mutation_t where id = 2"));
-                assertRows(connection,
-                        "select id, name, note from mutation_t order by id",
-                        "1|second|committed",
-                        "3|three|base");
+            assertEquals(1, executeUpdate(connection,
+                    "update mutation_t set name = 'first' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "update mutation_t set name = 'second', note = 'committed' where id = 1"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mutation_t where id = 2"));
+            assertRows(connection,
+                    "select id, name, note from mutation_t order by id",
+                    "1|second|committed",
+                    "3|three|base");
 
-                Savepoint savepoint = connection.setSavepoint("before_rolled_back_mutations");
-                assertEquals(1, executeUpdate(connection,
-                        "update mutation_t set name = 'savepoint' where id = 3"));
-                assertEquals(1, executeUpdate(connection,
-                        "delete from mutation_t where id = 1"));
-                connection.rollback(savepoint);
-                connection.releaseSavepoint(savepoint);
-                assertRows(connection,
-                        "select id, name, note from mutation_t order by id",
-                        "1|second|committed",
-                        "3|three|base");
-                connection.commit();
+            Savepoint savepoint = connection.setSavepoint("before_rolled_back_mutations");
+            assertEquals(1, executeUpdate(connection,
+                    "update mutation_t set name = 'savepoint' where id = 3"));
+            assertEquals(1, executeUpdate(connection,
+                    "delete from mutation_t where id = 1"));
+            connection.rollback(savepoint);
+            connection.releaseSavepoint(savepoint);
+            assertRows(connection,
+                    "select id, name, note from mutation_t order by id",
+                    "1|second|committed",
+                    "3|three|base");
+            connection.commit();
 
-                assertCommittedChains(connection);
-                connection.commit();
-            }
-            shutdownDatabase(database);
-
-            try (Connection reopened = openDatabase(database, false)) {
-                assertRows(reopened,
-                        "select id, name, note from mutation_t order by id",
-                        "1|second|committed",
-                        "3|three|base");
-                assertCommittedChains(reopened);
-            }
-            shutdownDatabase(database);
+            assertCommittedChains(connection);
+            connection.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            assertRows(reopened,
+                    "select id, name, note from mutation_t order by id",
+                    "1|second|committed",
+                    "3|three|base");
+            assertCommittedChains(reopened);
+        }
+        shutdownDatabase(database);
     }
 
     public void testHistoricalSnapshotTraversesReplacementAndTombstoneChains() throws Exception {
         String database = databaseName("mvcc-raw-store-update-delete-snapshot");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table snapshot_anchor (id int) using delos_mvcc");
-                executeUpdate(setup,
-                        "create table snapshot_data (id int, name varchar(64)) using delos_mvcc");
-                executeUpdate(setup, "insert into snapshot_anchor values (1)");
-                executeUpdate(setup, "insert into snapshot_data values (1, 'old')");
-                executeUpdate(setup, "insert into snapshot_data values (2, 'delete-old')");
-                setup.commit();
-            }
-
-            try (Connection historical = openDatabase(database, false);
-                 Connection staleWriter = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                staleWriter.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                staleWriter.setAutoCommit(false);
-                writer.setAutoCommit(false);
-
-                assertRows(historical, "select id from snapshot_anchor", "1");
-                assertRows(staleWriter, "select id from snapshot_anchor", "1");
-
-                executeUpdate(writer, "update snapshot_data set name = 'new' where id = 1");
-                executeUpdate(writer, "delete from snapshot_data where id = 2");
-                writer.commit();
-
-                assertRows(historical,
-                        "select id, name from snapshot_data order by id",
-                        "1|old",
-                        "2|delete-old");
-
-                try {
-                    executeUpdate(staleWriter,
-                            "update snapshot_data set name = 'stale-overwrite' where id = 1");
-                    fail("A stale snapshot must not overwrite a newer RawStore MVCC head");
-                } catch (SQLException expected) {
-                    assertEquals("40001", expected.getSQLState());
-                }
-                rollbackAfterExpectedConflict(staleWriter);
-
-                historical.commit();
-                assertRows(historical,
-                        "select id, name from snapshot_data order by id",
-                        "1|new");
-                historical.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table snapshot_anchor (id int) using delos_mvcc");
+            executeUpdate(setup,
+                    "create table snapshot_data (id int, name varchar(64)) using delos_mvcc");
+            executeUpdate(setup, "insert into snapshot_anchor values (1)");
+            executeUpdate(setup, "insert into snapshot_data values (1, 'old')");
+            executeUpdate(setup, "insert into snapshot_data values (2, 'delete-old')");
+            setup.commit();
         }
+
+        try (Connection historical = openDatabase(database, false);
+             Connection staleWriter = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            staleWriter.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            historical.setAutoCommit(false);
+            staleWriter.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            assertRows(historical, "select id from snapshot_anchor", "1");
+            assertRows(staleWriter, "select id from snapshot_anchor", "1");
+
+            executeUpdate(writer, "update snapshot_data set name = 'new' where id = 1");
+            executeUpdate(writer, "delete from snapshot_data where id = 2");
+            writer.commit();
+
+            assertRows(historical,
+                    "select id, name from snapshot_data order by id",
+                    "1|old",
+                    "2|delete-old");
+
+            try {
+                executeUpdate(staleWriter,
+                        "update snapshot_data set name = 'stale-overwrite' where id = 1");
+                fail("A stale snapshot must not overwrite a newer RawStore MVCC head");
+            } catch (SQLException expected) {
+                assertEquals("40001", expected.getSQLState());
+            }
+            rollbackAfterExpectedConflict(staleWriter);
+
+            historical.commit();
+            assertRows(historical,
+                    "select id, name from snapshot_data order by id",
+                    "1|new");
+            historical.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testUpdateDeleteSurviveBothRawStoreCrashBoundaries() throws Exception {
@@ -154,8 +148,7 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
     public void testMemoryAndMultiTableUpdateDeleteShareOneOutcome() throws Exception {
         String database = "mvcc_raw_store_update_delete_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -242,21 +235,18 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table crash_mutation_t (id int, name varchar(64)) using delos_mvcc");
-                executeUpdate(setup, "insert into crash_mutation_t values (1, 'old')");
-                executeUpdate(setup, "insert into crash_mutation_t values (2, 'delete-old')");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table crash_mutation_t (id int, name varchar(64)) using delos_mvcc");
+            executeUpdate(setup, "insert into crash_mutation_t values (1, 'old')");
+            executeUpdate(setup, "insert into crash_mutation_t values (2, 'delete-old')");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -272,8 +262,7 @@ public final class MvccRawStoreUpdateDeleteTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             if (expectCommitted) {
                 assertRows(recovered,
                         "select id, name from crash_mutation_t order by id",

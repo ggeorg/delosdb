@@ -23,15 +23,12 @@ import java.util.concurrent.TimeUnit;
 
 /** Validated RawStore page/record lookup-hint and logical-fallback proofs. */
 public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
     public void testInsertAndFetchLocationReturnsStableDirectoryLocator() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-insert-location-hint");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection, "create table insert_hint_t (id int) using delos_mvcc");
             connection.commit();
@@ -62,8 +59,7 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
 
     public void testBaseScanRowLocationsPreserveDirectoryHintsForMutation() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-scan-location-hints");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table scan_hint_t "
@@ -104,121 +100,115 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
 
     public void testPersistedHintsMatchPhysicalRecordsAndSurviveReopen() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-lookup-hints");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table lookup_t (id int, name varchar(64)) using delos_mvcc");
-                executeUpdate(connection, "insert into lookup_t values (1, 'one')");
-                executeUpdate(connection, "insert into lookup_t values (2, 'two')");
-                connection.commit();
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table lookup_t (id int, name varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into lookup_t values (1, 'one')");
+            executeUpdate(connection, "insert into lookup_t values (2, 'two')");
+            connection.commit();
 
-                executeUpdate(connection, "update lookup_t set name = 'one-v2' where id = 1");
-                executeUpdate(connection, "update lookup_t set name = 'one-v3' where id = 1");
-                executeUpdate(connection, "delete from lookup_t where id = 2");
-                connection.commit();
+            executeUpdate(connection, "update lookup_t set name = 'one-v2' where id = 1");
+            executeUpdate(connection, "update lookup_t set name = 'one-v3' where id = 1");
+            executeUpdate(connection, "delete from lookup_t where id = 2");
+            connection.commit();
 
-                assertRows(connection,
-                        "select id, name from lookup_t order by id",
-                        "1|one-v3");
-                assertHintTopology(connection, "LOOKUP_T");
-                connection.commit();
-            }
-            shutdownDatabase(database);
-
-            try (Connection reopened = openDatabase(database, false)) {
-                assertRows(reopened,
-                        "select id, name from lookup_t order by id",
-                        "1|one-v3");
-                assertHintTopology(reopened, "LOOKUP_T");
-                reopened.commit();
-            }
-            shutdownDatabase(database);
+            assertRows(connection,
+                    "select id, name from lookup_t order by id",
+                    "1|one-v3");
+            assertHintTopology(connection, "LOOKUP_T");
+            connection.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            assertRows(reopened,
+                    "select id, name from lookup_t order by id",
+                    "1|one-v3");
+            assertHintTopology(reopened, "LOOKUP_T");
+            reopened.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testStaleHintsFallBackForCurrentAndHistoricalSnapshots() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-stale-lookup-hints");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup, "create table hint_anchor (id int) using delos_mvcc");
-                executeUpdate(setup,
-                        "create table hint_data (id int, name varchar(64)) using delos_mvcc");
-                executeUpdate(setup, "insert into hint_anchor values (1)");
-                executeUpdate(setup, "insert into hint_data values (1, 'old')");
-                setup.commit();
-            }
-
-            try (Connection historical = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                writer.setAutoCommit(false);
-                assertRows(historical, "select id from hint_anchor", "1");
-
-                executeUpdate(writer, "update hint_data set name = 'new' where id = 1");
-                writer.commit();
-
-                try (Connection corrupter = openDatabase(database, false)) {
-                    corrupter.setAutoCommit(false);
-                    MvccRawStoreMetadataInspection.invalidateLookupHints(
-                            corrupter,
-                            "HINT_DATA",
-                            1L);
-                    corrupter.commit();
-                }
-
-                assertRows(historical, "select id, name from hint_data", "1|old");
-                historical.commit();
-                try (Connection current = openDatabase(database, false)) {
-                    assertRows(current, "select id, name from hint_data", "1|new");
-                    current.commit();
-                }
-
-                executeUpdate(writer, "update hint_data set name = 'newest' where id = 1");
-                writer.commit();
-                assertRows(writer, "select id, name from hint_data", "1|newest");
-                assertCurrentHeadAndNewestVersionHaveHints(writer, "HINT_DATA");
-                writer.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table hint_anchor (id int) using delos_mvcc");
+            executeUpdate(setup,
+                    "create table hint_data (id int, name varchar(64)) using delos_mvcc");
+            executeUpdate(setup, "insert into hint_anchor values (1)");
+            executeUpdate(setup, "insert into hint_data values (1, 'old')");
+            setup.commit();
         }
+
+        try (Connection historical = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            historical.setAutoCommit(false);
+            writer.setAutoCommit(false);
+            assertRows(historical, "select id from hint_anchor", "1");
+
+            executeUpdate(writer, "update hint_data set name = 'new' where id = 1");
+            writer.commit();
+
+            try (Connection corrupter = openDatabase(database, false)) {
+                corrupter.setAutoCommit(false);
+                MvccRawStoreMetadataInspection.invalidateLookupHints(
+                        corrupter,
+                        "HINT_DATA",
+                        1L);
+                corrupter.commit();
+            }
+
+            assertRows(historical, "select id, name from hint_data", "1|old");
+            historical.commit();
+            try (Connection current = openDatabase(database, false)) {
+                assertRows(current, "select id, name from hint_data", "1|new");
+                current.commit();
+            }
+
+            executeUpdate(writer, "update hint_data set name = 'newest' where id = 1");
+            writer.commit();
+            assertRows(writer, "select id, name from hint_data", "1|newest");
+            assertCurrentHeadAndNewestVersionHaveHints(writer, "HINT_DATA");
+            writer.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testRowsWithoutOptionalHintsRemainReadableAndUpgradeOnMutation() throws Exception {
         String database = uniqueDatabaseName("mvcc-raw-store-legacy-lookup-hints");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table legacy_hint_t (id int, name varchar(64)) using delos_mvcc");
-                executeUpdate(connection, "insert into legacy_hint_t values (1, 'one')");
-                connection.commit();
-                executeUpdate(connection,
-                        "update legacy_hint_t set name = 'one-v2' where id = 1");
-                connection.commit();
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table legacy_hint_t (id int, name varchar(64)) using delos_mvcc");
+            executeUpdate(connection, "insert into legacy_hint_t values (1, 'one')");
+            connection.commit();
+            executeUpdate(connection,
+                    "update legacy_hint_t set name = 'one-v2' where id = 1");
+            connection.commit();
 
-                MvccRawStoreMetadataInspection.stripLookupHints(connection, "LEGACY_HINT_T");
-                connection.commit();
-                assertNoHintFields(connection, "LEGACY_HINT_T");
-                assertRows(connection, "select id, name from legacy_hint_t", "1|one-v2");
-                connection.commit();
-            }
-            shutdownDatabase(database);
-
-            try (Connection reopened = openDatabase(database, false)) {
-                reopened.setAutoCommit(false);
-                assertRows(reopened, "select id, name from legacy_hint_t", "1|one-v2");
-                executeUpdate(reopened,
-                        "update legacy_hint_t set name = 'one-v3' where id = 1");
-                reopened.commit();
-                assertRows(reopened, "select id, name from legacy_hint_t", "1|one-v3");
-                assertCurrentHeadAndNewestVersionHaveHints(reopened, "LEGACY_HINT_T");
-                reopened.commit();
-            }
-            shutdownDatabase(database);
+            MvccRawStoreMetadataInspection.stripLookupHints(connection, "LEGACY_HINT_T");
+            connection.commit();
+            assertNoHintFields(connection, "LEGACY_HINT_T");
+            assertRows(connection, "select id, name from legacy_hint_t", "1|one-v2");
+            connection.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            reopened.setAutoCommit(false);
+            assertRows(reopened, "select id, name from legacy_hint_t", "1|one-v2");
+            executeUpdate(reopened,
+                    "update legacy_hint_t set name = 'one-v3' where id = 1");
+            reopened.commit();
+            assertRows(reopened, "select id, name from legacy_hint_t", "1|one-v3");
+            assertCurrentHeadAndNewestVersionHaveHints(reopened, "LEGACY_HINT_T");
+            reopened.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testCrashRecoveryAndMemoryUseTheSameHintRules() throws Exception {
@@ -227,8 +217,7 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
 
         String database = "mvcc_raw_store_lookup_hint_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -328,20 +317,17 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table crash_hint_t (id int, name varchar(64)) using delos_mvcc");
-                executeUpdate(setup, "insert into crash_hint_t values (1, 'old')");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table crash_hint_t (id int, name varchar(64)) using delos_mvcc");
+            executeUpdate(setup, "insert into crash_hint_t values (1, 'old')");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -357,8 +343,7 @@ public final class MvccRawStoreLookupHintTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             assertRows(recovered,
                     "select id, name from crash_hint_t",
                     expectCommitted ? "1|new" : "1|old");

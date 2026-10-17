@@ -21,8 +21,6 @@ import org.apache.derby.iapi.store.types.DelosStorageMaintenanceTableSnapshot;
 
 /** Autonomous RawStore MVCC maintenance and immutable diagnostics proofs. */
 public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSupport {
-    private static final String RAWSTORE_ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String MAINTENANCE_ENABLED_PROPERTY =
             "delosdb.mvcc.rawStoreMaintenance.enabled";
     private static final String PERIOD_MILLIS_PROPERTY =
@@ -34,8 +32,7 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
     public void testMaintenanceIsExplicitDuringConvergenceAndDiagnosticsRemainDatabaseScoped()
             throws Exception {
         String database = databaseName("mvcc-raw-store-maintenance-disabled");
-        try (SystemPropertyScope rawStore = setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true");
-             SystemPropertyScope maintenance = setSystemProperty(
+        try (SystemPropertyScope maintenance = setSystemProperty(
                      MAINTENANCE_ENABLED_PROPERTY, "false")) {
             try (Connection connection = openDatabase(database, true)) {
                 connection.setAutoCommit(false);
@@ -344,7 +341,6 @@ public final class MvccRawStoreMaintenanceDiagnosticsTest extends MvccSqlTestSup
 
     private static final class MaintenanceProperties implements AutoCloseable {
         private final List<SystemPropertyScope> scopes = List.of(
-                setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true"),
                 setSystemProperty(MAINTENANCE_ENABLED_PROPERTY, "true"),
                 setSystemProperty(PERIOD_MILLIS_PROPERTY, "25"),
                 setSystemProperty(CHANGED_ROWS_THRESHOLD_PROPERTY, "1"));

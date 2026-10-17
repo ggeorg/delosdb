@@ -26,15 +26,12 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Transactional native unique-metadata lifecycle proofs for RawStore MVCC. */
 public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
     public void testAlterTableAddDropCommitRollbackAndDirectEnforcement() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-lifecycle-alter");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table lifecycle_t (id int, email varchar(64)) using delos_mvcc");
@@ -91,8 +88,7 @@ public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
 
     public void testCreateDropUniqueIndexAndSharedDefinitionReferenceCounts() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-lifecycle-index");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table lifecycle_index_t (id int, email varchar(64)) using delos_mvcc");
@@ -142,8 +138,7 @@ public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
     public void testRejectedDefinitionsAndStatementRollbackLeaveNoNativeMetadata()
             throws Exception {
         String database = databaseName("mvcc-raw-store-unique-lifecycle-reject");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table lifecycle_reject_t (id int, email varchar(64)) using delos_mvcc");
@@ -191,8 +186,7 @@ public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
 
         String memoryDatabase = "mvcc_raw_store_unique_lifecycle_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + memoryDatabase + ";create=true")) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -233,16 +227,14 @@ public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table crash_lifecycle (id int, email varchar(64)) using delos_mvcc");
-                executeUpdate(setup, "insert into crash_lifecycle values (1, 'old@example')");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table crash_lifecycle (id int, email varchar(64)) using delos_mvcc");
+            executeUpdate(setup, "insert into crash_lifecycle values (1, 'old@example')");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
@@ -250,7 +242,6 @@ public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
                 "java.base/sun.security.action=ALL-UNNAMED",
                 "--add-opens",
                 "java.base/java.nio=ALL-UNNAMED",
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -266,8 +257,7 @@ public final class MvccRawStoreUniqueLifecycleTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             recovered.setAutoCommit(false);
             List<MvccRawStoreMetadataInspection.UniqueConstraintIdentity> constraints =
                     uniqueMetadata(recovered, "CRASH_LIFECYCLE");

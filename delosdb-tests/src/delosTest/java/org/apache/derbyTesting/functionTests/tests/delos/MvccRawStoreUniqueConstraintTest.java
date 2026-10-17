@@ -31,15 +31,12 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** RawStore-native MVCC primary-key and unique-constraint proofs. */
 public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
     public void testDeclaredUniqueMetadataAndAccessMethodEnforcement() throws Exception {
         String database = databaseName("mvcc-raw-store-unique");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             try {
                 executeUpdate(connection,
@@ -118,8 +115,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
 
     public void testUpdateDeleteSavepointAndReopenPreserveUniqueness() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-history");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table unique_history (id int primary key, email varchar(64) unique) using delos_mvcc");
@@ -148,8 +144,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
         }
         shutdownDatabase(database);
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection reopened = openDatabase(database, false)) {
+        try (Connection reopened = openDatabase(database, false)) {
             reopened.setAutoCommit(false);
             assertDuplicateKey(() -> executeUpdate(
                     reopened,
@@ -167,8 +162,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
 
     public void testCommittedDeleteAndKeyChangeReleaseUniqueCandidates() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-candidate-release");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table unique_reuse "
@@ -200,63 +194,61 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
 
     public void testConcurrentUniqueWritersSerializeAtTheRawStoreUniqueKey() throws Exception {
         String database = databaseName("mvcc-raw-store-unique-concurrent");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table unique_concurrent (id int primary key, email varchar(64) unique) using delos_mvcc");
-                setup.commit();
-            }
-
-            try (Connection first = openDatabase(database, false);
-                 Connection second = openDatabase(database, false)) {
-                first.setAutoCommit(false);
-                second.setAutoCommit(false);
-                executeUpdate(first,
-                        "insert into unique_concurrent values (1, 'shared@example')");
-
-                ExecutorService executor = Executors.newSingleThreadExecutor();
-                try {
-                    CountDownLatch started = new CountDownLatch(1);
-                    Future<String> duplicate = executor.submit(() -> {
-                        started.countDown();
-                        try {
-                            executeUpdate(second,
-                                    "insert into unique_concurrent values (2, 'shared@example')");
-                            return "SUCCESS";
-                        } catch (SQLException expected) {
-                            return expected.getSQLState();
-                        }
-                    });
-                    assertTrue(started.await(5, TimeUnit.SECONDS));
-                    Thread.sleep(250L);
-                    assertFalse("second writer should wait for the transaction-duration unique-key lock", duplicate.isDone());
-                    first.commit();
-                    assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
-                    second.rollback();
-
-                    executeUpdate(first,
-                            "insert into unique_concurrent values (3, 'rollback@example')");
-                    Future<String> afterRollback = executor.submit(() -> {
-                        try {
-                            executeUpdate(second,
-                                    "insert into unique_concurrent values (4, 'rollback@example')");
-                            second.commit();
-                            return "SUCCESS";
-                        } catch (SQLException failure) {
-                            return failure.getSQLState();
-                        }
-                    });
-                    Thread.sleep(250L);
-                    assertFalse(afterRollback.isDone());
-                    first.rollback();
-                    assertEquals("SUCCESS", afterRollback.get(15, TimeUnit.SECONDS));
-                } finally {
-                    executor.shutdownNow();
-                }
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table unique_concurrent (id int primary key, email varchar(64) unique) using delos_mvcc");
+            setup.commit();
         }
+
+        try (Connection first = openDatabase(database, false);
+             Connection second = openDatabase(database, false)) {
+            first.setAutoCommit(false);
+            second.setAutoCommit(false);
+            executeUpdate(first,
+                    "insert into unique_concurrent values (1, 'shared@example')");
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+            try {
+                CountDownLatch started = new CountDownLatch(1);
+                Future<String> duplicate = executor.submit(() -> {
+                    started.countDown();
+                    try {
+                        executeUpdate(second,
+                                "insert into unique_concurrent values (2, 'shared@example')");
+                        return "SUCCESS";
+                    } catch (SQLException expected) {
+                        return expected.getSQLState();
+                    }
+                });
+                assertTrue(started.await(5, TimeUnit.SECONDS));
+                Thread.sleep(250L);
+                assertFalse("second writer should wait for the transaction-duration unique-key lock", duplicate.isDone());
+                first.commit();
+                assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
+                second.rollback();
+
+                executeUpdate(first,
+                        "insert into unique_concurrent values (3, 'rollback@example')");
+                Future<String> afterRollback = executor.submit(() -> {
+                    try {
+                        executeUpdate(second,
+                                "insert into unique_concurrent values (4, 'rollback@example')");
+                        second.commit();
+                        return "SUCCESS";
+                    } catch (SQLException failure) {
+                        return failure.getSQLState();
+                    }
+                });
+                Thread.sleep(250L);
+                assertFalse(afterRollback.isDone());
+                first.rollback();
+                assertEquals("SUCCESS", afterRollback.get(15, TimeUnit.SECONDS));
+            } finally {
+                executor.shutdownNow();
+            }
+        }
+        shutdownDatabase(database);
     }
 
     public void testUniqueStateSurvivesBothCrashBoundariesAndMemory() throws Exception {
@@ -265,8 +257,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
 
         String memoryDatabase = "mvcc_raw_store_unique_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + memoryDatabase + ";create=true")) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -291,16 +282,14 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table crash_unique (id int primary key, email varchar(64) unique) using delos_mvcc");
-                executeUpdate(setup, "insert into crash_unique values (1, 'old@example')");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table crash_unique (id int primary key, email varchar(64) unique) using delos_mvcc");
+            executeUpdate(setup, "insert into crash_unique values (1, 'old@example')");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
@@ -308,7 +297,6 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
                 "java.base/sun.security.action=ALL-UNNAMED",
                 "--add-opens",
                 "java.base/java.nio=ALL-UNNAMED",
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -324,8 +312,7 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             recovered.setAutoCommit(false);
             String occupied = expectCommitted ? "new@example" : "old@example";
             String available = expectCommitted ? "old@example" : "new@example";

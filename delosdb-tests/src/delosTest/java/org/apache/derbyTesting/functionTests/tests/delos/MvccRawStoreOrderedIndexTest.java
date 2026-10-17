@@ -36,96 +36,91 @@ import java.util.concurrent.TimeUnit;
 
 /** RawStore-owned MVCC index-candidate visibility, recovery, and compatibility proofs. */
 public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
     public void testEqualityRangeCandidateLookupAndReopenUseRawStoreIndex() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table indexed_t (id int, name varchar(64), score int, "
-                                + "padding varchar(600)) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 1, 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 2, 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 3, 0);
-                for (int id : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 10}) {
-                    String padding = "pad-" + id + '-' + "x".repeat(400);
-                    executeUpdate(connection, "insert into indexed_t values ("
-                            + id + ", 'name-" + id + "', " + (id * 10) + ", '" + padding + "')");
-                }
-                connection.commit();
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table indexed_t (id int, name varchar(64), score int, "
+                            + "padding varchar(600)) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 1, 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 2, 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(connection, "INDEXED_T", 3, 0);
+            for (int id : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 10}) {
+                String padding = "pad-" + id + '-' + "x".repeat(400);
+                executeUpdate(connection, "insert into indexed_t values ("
+                        + id + ", 'name-" + id + "', " + (id * 10) + ", '" + padding + "')");
+            }
+            connection.commit();
 
-                assertIndexedRows(connection,
-                        "select id, name from indexed_t where id = 6",
-                        "6|name-6");
-                try (PreparedStatement lookup = connection.prepareStatement(
-                        "select name from indexed_t where id = ?")) {
-                    for (int id : new int[] {6, 4, 6}) {
-                        lookup.setInt(1, id);
-                        try (ResultSet resultSet = lookup.executeQuery()) {
-                            assertTrue(resultSet.next());
-                            assertEquals("name-" + id, resultSet.getString(1));
-                            assertFalse(resultSet.next());
-                        }
-                        connection.commit();
+            assertIndexedRows(connection,
+                    "select id, name from indexed_t where id = 6",
+                    "6|name-6");
+            try (PreparedStatement lookup = connection.prepareStatement(
+                    "select name from indexed_t where id = ?")) {
+                for (int id : new int[] {6, 4, 6}) {
+                    lookup.setInt(1, id);
+                    try (ResultSet resultSet = lookup.executeQuery()) {
+                        assertTrue(resultSet.next());
+                        assertEquals("name-" + id, resultSet.getString(1));
+                        assertFalse(resultSet.next());
                     }
+                    connection.commit();
                 }
-                assertIndexedRows(connection,
-                        "select id, score from indexed_t where score >= 30 and score < 60 order by score",
-                        "3|30",
-                        "4|40",
-                        "5|50");
-
-                long indexContainer = MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        connection,
-                        "INDEXED_T");
-                assertTrue("ordered-index container must be persisted", indexContainer > 0L);
-                assertEquals("one compatibility B-tree slot per orderable column",
-                        4,
-                        MvccRawStoreMetadataInspection.orderedIndexBtreeCount(
-                                connection,
-                                "INDEXED_T"));
-                assertTrue("ordered-index proof must cross a RawStore page boundary",
-                        MvccRawStoreMetadataInspection.orderedIndexPageCount(
-                                connection,
-                                "INDEXED_T") > 1L);
-                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
-                        MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "INDEXED_T");
-                assertEquals(36, entries.size());
-                assertTrue(
-                        "fresh B-tree candidates must carry direct directory locators",
-                        entries.stream().allMatch(
-                                MvccRawStoreMetadataInspection.OrderedIndexIdentity::
-                                        hasDirectoryLocator));
-                assertPhysicalTypedCoverage(entries);
-                connection.commit();
             }
-            shutdownDatabase(database);
+            assertIndexedRows(connection,
+                    "select id, score from indexed_t where score >= 30 and score < 60 order by score",
+                    "3|30",
+                    "4|40",
+                    "5|50");
 
-            try (Connection reopened = openDatabase(database, false)) {
-                assertIndexedRows(reopened,
-                        "select id, name from indexed_t where name = 'name-4'",
-                        "4|name-4");
-                assertIndexedRows(reopened,
-                        "select id, score from indexed_t where score > 60 order by score",
-                        "7|70",
-                        "8|80",
-                        "10|100");
-                reopened.commit();
-            }
-            shutdownDatabase(database);
+            long indexContainer = MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                    connection,
+                    "INDEXED_T");
+            assertTrue("ordered-index container must be persisted", indexContainer > 0L);
+            assertEquals("one compatibility B-tree slot per orderable column",
+                    4,
+                    MvccRawStoreMetadataInspection.orderedIndexBtreeCount(
+                            connection,
+                            "INDEXED_T"));
+            assertTrue("ordered-index proof must cross a RawStore page boundary",
+                    MvccRawStoreMetadataInspection.orderedIndexPageCount(
+                            connection,
+                            "INDEXED_T") > 1L);
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
+                    MvccRawStoreMetadataInspection.orderedIndexEntries(connection, "INDEXED_T");
+            assertEquals(36, entries.size());
+            assertTrue(
+                    "fresh B-tree candidates must carry direct directory locators",
+                    entries.stream().allMatch(
+                            MvccRawStoreMetadataInspection.OrderedIndexIdentity::
+                                    hasDirectoryLocator));
+            assertPhysicalTypedCoverage(entries);
+            connection.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            assertIndexedRows(reopened,
+                    "select id, name from indexed_t where name = 'name-4'",
+                    "4|name-4");
+            assertIndexedRows(reopened,
+                    "select id, score from indexed_t where score > 60 order by score",
+                    "7|70",
+                    "8|80",
+                    "10|100");
+            reopened.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testOrdinaryNonUniqueColumnsDoNotReceiveHiddenCandidates() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index-policy");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table policy_t (id int primary key, category int, payload varchar(600)) "
@@ -157,294 +152,285 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         String payloadOne = "payload-one-" + "x".repeat(500);
         String payloadTwo = "payload-two-" + "y".repeat(500);
         String payloadThree = "payload-three-" + "z".repeat(500);
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table projection_t (id int primary key, category int, "
-                                + "quantity int, payload varchar(600)) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "PROJECTION_T", 1, 0);
-                executeUpdate(setup,
-                        "insert into projection_t values (1, 7, 10, '" + payloadOne + "')");
-                executeUpdate(setup,
-                        "insert into projection_t values (2, 7, 20, '" + payloadTwo + "')");
-                executeUpdate(setup,
-                        "insert into projection_t values (3, 8, 30, '" + payloadThree + "')");
-                setup.commit();
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table projection_t (id int primary key, category int, "
+                            + "quantity int, payload varchar(600)) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "PROJECTION_T", 1, 0);
+            executeUpdate(setup,
+                    "insert into projection_t values (1, 7, 10, '" + payloadOne + "')");
+            executeUpdate(setup,
+                    "insert into projection_t values (2, 7, 20, '" + payloadTwo + "')");
+            executeUpdate(setup,
+                    "insert into projection_t values (3, 8, 30, '" + payloadThree + "')");
+            setup.commit();
 
-                assertRows(setup,
-                        "select id from projection_t order by id",
-                        "1",
-                        "2",
-                        "3");
-                assertIndexedRows(setup,
-                        "select id from projection_t "
-                                + "where category = 7 and quantity >= 20 order by id",
-                        "2");
-                assertIndexedRows(setup,
-                        "select id, quantity from projection_t "
-                                + "--DERBY-PROPERTIES index=null\n"
-                                + "where id = 2",
-                        "2|20");
-                assertIndexedRows(setup,
-                        "select payload from projection_t "
-                                + "--DERBY-PROPERTIES index=null\n"
-                                + "where id = 2",
-                        payloadTwo);
-                setup.commit();
-            }
-
-            try (Connection historical = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                writer.setAutoCommit(false);
-                assertIndexedRows(historical,
-                        "select id from projection_t where category = 7 order by id",
-                        "1",
-                        "2");
-
-                executeUpdate(writer,
-                        "update projection_t set quantity = 25 where id = 2");
-                writer.commit();
-
-                assertIndexedRows(historical,
-                        "select id, quantity from projection_t "
-                                + "where category = 7 and quantity >= 20 order by id",
-                        "2|20");
-                historical.commit();
-                assertIndexedRows(historical,
-                        "select id, quantity from projection_t "
-                                + "where category = 7 and quantity >= 20 order by id",
-                        "2|25");
-                historical.commit();
-            }
-            shutdownDatabase(database);
+            assertRows(setup,
+                    "select id from projection_t order by id",
+                    "1",
+                    "2",
+                    "3");
+            assertIndexedRows(setup,
+                    "select id from projection_t "
+                            + "where category = 7 and quantity >= 20 order by id",
+                    "2");
+            assertIndexedRows(setup,
+                    "select id, quantity from projection_t "
+                            + "--DERBY-PROPERTIES index=null\n"
+                            + "where id = 2",
+                    "2|20");
+            assertIndexedRows(setup,
+                    "select payload from projection_t "
+                            + "--DERBY-PROPERTIES index=null\n"
+                            + "where id = 2",
+                    payloadTwo);
+            setup.commit();
         }
+
+        try (Connection historical = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            historical.setAutoCommit(false);
+            writer.setAutoCommit(false);
+            assertIndexedRows(historical,
+                    "select id from projection_t where category = 7 order by id",
+                    "1",
+                    "2");
+
+            executeUpdate(writer,
+                    "update projection_t set quantity = 25 where id = 2");
+            writer.commit();
+
+            assertIndexedRows(historical,
+                    "select id, quantity from projection_t "
+                            + "where category = 7 and quantity >= 20 order by id",
+                    "2|20");
+            historical.commit();
+            assertIndexedRows(historical,
+                    "select id, quantity from projection_t "
+                            + "where category = 7 and quantity >= 20 order by id",
+                    "2|25");
+            historical.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testCoveringCandidateUsesVisibleHeadAndFallsBackForChangedHead()
             throws Exception {
         String database = databaseName("mvcc-raw-store-covering-index");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table covering_t (id int primary key, category int, "
-                                + "payload varchar(600)) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "COVERING_T", 1, 0);
-                executeUpdate(setup,
-                        "insert into covering_t values (1, 7, '" + "x".repeat(500) + "')");
-                executeUpdate(setup,
-                        "insert into covering_t values (2, 7, '" + "y".repeat(500) + "')");
-                setup.commit();
-            }
-
-            // The permanent current-row architecture publishes transient anchors at commit.
-            // Reopen once so this test still proves the colder directory-summary covering path
-            // rather than accidentally asserting against the accepted warm-anchor fast path.
-            shutdownDatabase(database);
-            try (Connection connection = openDatabase(database, false)) {
-                connection.setAutoCommit(false);
-                String coveringStatistics = assertCoveringIndexedRows(connection,
-                        "select count(*) from covering_t where category = 7",
-                        "2");
-                assertScanMetric(coveringStatistics, "mvccOrderedCandidates", 2L);
-                assertScanMetric(coveringStatistics, "mvccCoveringCandidates", 2L);
-                assertScanMetric(coveringStatistics, "mvccCoveredCandidates", 2L);
-                assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 1L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryPageBatchCandidates", 2L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryPageReuseHits", 1L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryChecks", 2L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryHits", 2L);
-                assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
-                assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 0L);
-                assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 0L);
-                assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
-                assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
-                assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
-
-                String currentIdStatistics = assertNonCoveringIndexedRows(connection,
-                        "select id from covering_t --DERBY-PROPERTIES index=null\n"
-                                + "where id = 2",
-                        "2");
-                assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorHits", 1L);
-                assertScanMetric(currentIdStatistics, "mvccDirectoryPageAcquisitions", 0L);
-
-                String currentCategoryStatistics = assertNonCoveringIndexedRows(connection,
-                        "select category from covering_t where category = 7",
-                        "7",
-                        "7");
-                assertScanMetric(currentCategoryStatistics, "mvccCurrentRowAnchorChecks", 2L);
-                assertScanMetric(currentCategoryStatistics, "mvccCurrentRowAnchorHits", 2L);
-                assertScanMetric(currentCategoryStatistics, "mvccDirectoryPageAcquisitions", 0L);
-
-                assertNonCoveringIndexedRows(connection,
-                        "select id, category from covering_t where category = 7 order by id",
-                        "1|7",
-                        "2|7");
-
-                executeUpdate(connection,
-                        "update covering_t set payload = '" + "z".repeat(500) + "' where id = 2");
-                connection.commit();
-                assertNonCoveringIndexedRows(connection,
-                        "select category from covering_t where category = 7",
-                        "7",
-                        "7");
-
-                executeUpdate(connection,
-                        "update covering_t set category = 9 where id = 2");
-                connection.commit();
-                String changedHeadStatistics = assertNonCoveringIndexedRows(connection,
-                        "select category from covering_t where category = 9",
-                        "9");
-                assertScanMetric(changedHeadStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(changedHeadStatistics, "mvccCurrentRowAnchorHits", 1L);
-
-                executeUpdate(connection, "delete from covering_t where id = 1");
-                connection.commit();
-                assertNonCoveringIndexedRows(connection,
-                        "select category from covering_t where category = 7");
-                connection.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table covering_t (id int primary key, category int, "
+                            + "payload varchar(600)) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "COVERING_T", 1, 0);
+            executeUpdate(setup,
+                    "insert into covering_t values (1, 7, '" + "x".repeat(500) + "')");
+            executeUpdate(setup,
+                    "insert into covering_t values (2, 7, '" + "y".repeat(500) + "')");
+            setup.commit();
         }
+
+        // The permanent current-row architecture publishes transient anchors at commit.
+        // Reopen once so this test still proves the colder directory-summary covering path
+        // rather than accidentally asserting against the accepted warm-anchor fast path.
+        shutdownDatabase(database);
+        try (Connection connection = openDatabase(database, false)) {
+            connection.setAutoCommit(false);
+            String coveringStatistics = assertCoveringIndexedRows(connection,
+                    "select count(*) from covering_t where category = 7",
+                    "2");
+            assertScanMetric(coveringStatistics, "mvccOrderedCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccCoveringCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccCoveredCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccFallbackCandidates", 0L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageAcquisitions", 1L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageBatchCandidates", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryPageReuseHits", 1L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryLogicalFallbacks", 0L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryChecks", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryHits", 2L);
+            assertScanMetric(coveringStatistics, "mvccDirectoryHeadSummaryFallbacks", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionPageAcquisitions", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionSlotFetches", 0L);
+            assertScanMetric(coveringStatistics, "mvccVisibilityChecks", 2L);
+            assertScanMetric(coveringStatistics, "mvccVersionChainSteps", 0L);
+            assertScanMetric(coveringStatistics, "mvccVersionLogicalFallbacks", 0L);
+
+            String currentIdStatistics = assertNonCoveringIndexedRows(connection,
+                    "select id from covering_t --DERBY-PROPERTIES index=null\n"
+                            + "where id = 2",
+                    "2");
+            assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorChecks", 1L);
+            assertScanMetric(currentIdStatistics, "mvccCurrentRowAnchorHits", 1L);
+            assertScanMetric(currentIdStatistics, "mvccDirectoryPageAcquisitions", 0L);
+
+            String currentCategoryStatistics = assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7",
+                    "7",
+                    "7");
+            assertScanMetric(currentCategoryStatistics, "mvccCurrentRowAnchorChecks", 2L);
+            assertScanMetric(currentCategoryStatistics, "mvccCurrentRowAnchorHits", 2L);
+            assertScanMetric(currentCategoryStatistics, "mvccDirectoryPageAcquisitions", 0L);
+
+            assertNonCoveringIndexedRows(connection,
+                    "select id, category from covering_t where category = 7 order by id",
+                    "1|7",
+                    "2|7");
+
+            executeUpdate(connection,
+                    "update covering_t set payload = '" + "z".repeat(500) + "' where id = 2");
+            connection.commit();
+            assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7",
+                    "7",
+                    "7");
+
+            executeUpdate(connection,
+                    "update covering_t set category = 9 where id = 2");
+            connection.commit();
+            String changedHeadStatistics = assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 9",
+                    "9");
+            assertScanMetric(changedHeadStatistics, "mvccCurrentRowAnchorChecks", 1L);
+            assertScanMetric(changedHeadStatistics, "mvccCurrentRowAnchorHits", 1L);
+
+            executeUpdate(connection, "delete from covering_t where id = 1");
+            connection.commit();
+            assertNonCoveringIndexedRows(connection,
+                    "select category from covering_t where category = 7");
+            connection.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testCoveringCandidateFallsBackForHistoricalSnapshot() throws Exception {
         String database = databaseName("mvcc-raw-store-covering-snapshot");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table covering_snapshot_t (id int primary key, category int) "
-                                + "using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
-                        setup, "COVERING_SNAPSHOT_T", 1, 0);
-                executeUpdate(setup,
-                        "insert into covering_snapshot_t values (1, 7)");
-                setup.commit();
-            }
-
-            // Start this proof without the transient anchor published by fixture commit so the
-            // first read exercises the directory-head covering authority.
-            shutdownDatabase(database);
-            try (Connection historical = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                writer.setAutoCommit(false);
-                assertCoveringIndexedRows(historical,
-                        "select category from covering_snapshot_t where category = 7",
-                        "7");
-
-                executeUpdate(writer,
-                        "update covering_snapshot_t set category = 9 where id = 1");
-                writer.commit();
-
-                String historicalStatistics = assertNonCoveringIndexedRows(historical,
-                        "select category from covering_snapshot_t where category = 7",
-                        "7");
-                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorHits", 0L);
-                assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
-                historical.commit();
-
-                String currentStatistics = assertNonCoveringIndexedRows(historical,
-                        "select category from covering_snapshot_t where category = 9",
-                        "9");
-                assertScanMetric(currentStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(currentStatistics, "mvccCurrentRowAnchorHits", 1L);
-                assertScanMetric(currentStatistics, "mvccDirectoryPageAcquisitions", 0L);
-                historical.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table covering_snapshot_t (id int primary key, category int) "
+                            + "using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
+                    setup, "COVERING_SNAPSHOT_T", 1, 0);
+            executeUpdate(setup,
+                    "insert into covering_snapshot_t values (1, 7)");
+            setup.commit();
         }
+
+        // Start this proof without the transient anchor published by fixture commit so the
+        // first read exercises the directory-head covering authority.
+        shutdownDatabase(database);
+        try (Connection historical = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            historical.setAutoCommit(false);
+            writer.setAutoCommit(false);
+            assertCoveringIndexedRows(historical,
+                    "select category from covering_snapshot_t where category = 7",
+                    "7");
+
+            executeUpdate(writer,
+                    "update covering_snapshot_t set category = 9 where id = 1");
+            writer.commit();
+
+            String historicalStatistics = assertNonCoveringIndexedRows(historical,
+                    "select category from covering_snapshot_t where category = 7",
+                    "7");
+            assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorChecks", 1L);
+            assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorHits", 0L);
+            assertScanMetric(historicalStatistics, "mvccCurrentRowAnchorFallbacks", 1L);
+            historical.commit();
+
+            String currentStatistics = assertNonCoveringIndexedRows(historical,
+                    "select category from covering_snapshot_t where category = 9",
+                    "9");
+            assertScanMetric(currentStatistics, "mvccCurrentRowAnchorChecks", 1L);
+            assertScanMetric(currentStatistics, "mvccCurrentRowAnchorHits", 1L);
+            assertScanMetric(currentStatistics, "mvccDirectoryPageAcquisitions", 0L);
+            historical.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testDirectoryHeadSummaryHandlesOwnWritesOtherTransactionsAndRollback()
             throws Exception {
         String database = databaseName("mvcc-raw-store-directory-head-summary");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                executeUpdate(connection,
-                        "create table head_summary_t (id int primary key, category int) "
-                                + "using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
-                        connection, "HEAD_SUMMARY_T", 1, 0);
-                connection.commit();
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            executeUpdate(connection,
+                    "create table head_summary_t (id int primary key, category int) "
+                            + "using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(
+                    connection, "HEAD_SUMMARY_T", 1, 0);
+            connection.commit();
 
-                executeUpdate(connection, "insert into head_summary_t values (1, 7)");
-                String ownWriteStatistics = assertCoveringIndexedRows(connection,
-                        "select category from head_summary_t where category = 7",
-                        "7");
-                assertScanMetric(
-                        ownWriteStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
-                assertScanMetric(
-                        ownWriteStatistics, "mvccDirectoryHeadSummaryHits", 1L);
-                assertScanMetric(ownWriteStatistics, "mvccVersionPageAcquisitions", 0L);
-                connection.rollback();
-                assertNonCoveringIndexedRows(connection,
-                        "select category from head_summary_t where category = 7");
+            executeUpdate(connection, "insert into head_summary_t values (1, 7)");
+            String ownWriteStatistics = assertCoveringIndexedRows(connection,
+                    "select category from head_summary_t where category = 7",
+                    "7");
+            assertScanMetric(
+                    ownWriteStatistics, "mvccDirectoryHeadSummaryChecks", 1L);
+            assertScanMetric(
+                    ownWriteStatistics, "mvccDirectoryHeadSummaryHits", 1L);
+            assertScanMetric(ownWriteStatistics, "mvccVersionPageAcquisitions", 0L);
+            connection.rollback();
+            assertNonCoveringIndexedRows(connection,
+                    "select category from head_summary_t where category = 7");
 
-                executeUpdate(connection, "insert into head_summary_t values (1, 7)");
-                connection.commit();
-            }
-
-            try (Connection reader = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                reader.setAutoCommit(false);
-                writer.setAutoCommit(false);
-
-                executeUpdate(writer,
-                        "update head_summary_t set category = 9 where id = 1");
-
-                String committedHeadStatistics = assertNonCoveringIndexedRows(reader,
-                        "select category from head_summary_t where category = 7",
-                        "7");
-                assertScanMetric(
-                        committedHeadStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(
-                        committedHeadStatistics, "mvccCurrentRowAnchorHits", 1L);
-
-                String otherTransactionStatistics = assertNonCoveringIndexedRows(reader,
-                        "select category from head_summary_t where category = 9");
-                assertScanMetric(
-                        otherTransactionStatistics, "mvccCurrentRowAnchorChecks", 1L);
-                assertScanMetric(
-                        otherTransactionStatistics, "mvccCurrentRowAnchorHits", 1L);
-                assertScanMetric(
-                        otherTransactionStatistics, "mvccCurrentVersionReadImageHits", 1L);
-                assertScanMetric(
-                        otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 0L);
-                assertScanMetric(otherTransactionStatistics, "mvccVersionPageAcquisitions", 0L);
-
-                writer.rollback();
-                reader.commit();
-                String restoredStatistics = assertNonCoveringIndexedRows(reader,
-                        "select category from head_summary_t where category = 7",
-                        "7");
-                assertScanMetric(
-                        restoredStatistics, "mvccCurrentRowAnchorHits", 1L);
-                assertScanMetric(
-                        restoredStatistics, "mvccCurrentVersionReadImageHits", 1L);
-                assertScanMetric(restoredStatistics, "mvccVersionPageAcquisitions", 0L);
-                reader.commit();
-            }
-            shutdownDatabase(database);
+            executeUpdate(connection, "insert into head_summary_t values (1, 7)");
+            connection.commit();
         }
+
+        try (Connection reader = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            reader.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            executeUpdate(writer,
+                    "update head_summary_t set category = 9 where id = 1");
+
+            String committedHeadStatistics = assertNonCoveringIndexedRows(reader,
+                    "select category from head_summary_t where category = 7",
+                    "7");
+            assertScanMetric(
+                    committedHeadStatistics, "mvccCurrentRowAnchorChecks", 1L);
+            assertScanMetric(
+                    committedHeadStatistics, "mvccCurrentRowAnchorHits", 1L);
+
+            String otherTransactionStatistics = assertNonCoveringIndexedRows(reader,
+                    "select category from head_summary_t where category = 9");
+            assertScanMetric(
+                    otherTransactionStatistics, "mvccCurrentRowAnchorChecks", 1L);
+            assertScanMetric(
+                    otherTransactionStatistics, "mvccCurrentRowAnchorHits", 1L);
+            assertScanMetric(
+                    otherTransactionStatistics, "mvccCurrentVersionReadImageHits", 1L);
+            assertScanMetric(
+                    otherTransactionStatistics, "mvccDirectoryHeadSummaryChecks", 0L);
+            assertScanMetric(otherTransactionStatistics, "mvccVersionPageAcquisitions", 0L);
+
+            writer.rollback();
+            reader.commit();
+            String restoredStatistics = assertNonCoveringIndexedRows(reader,
+                    "select category from head_summary_t where category = 7",
+                    "7");
+            assertScanMetric(
+                    restoredStatistics, "mvccCurrentRowAnchorHits", 1L);
+            assertScanMetric(
+                    restoredStatistics, "mvccCurrentVersionReadImageHits", 1L);
+            assertScanMetric(restoredStatistics, "mvccVersionPageAcquisitions", 0L);
+            reader.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testWideVarcharKeysUseLargePagesAndOversizeKeysFallBack() throws Exception {
         String database = databaseName("mvcc-raw-store-wide-ordered-index");
         String pageSizedPayload = "p".repeat(4096);
         String oversizePayload = "o".repeat(32672);
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = openDatabase(database, true)) {
+        try (Connection connection = openDatabase(database, true)) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
                     "create table page_sized_t (id int primary key, payload varchar(4096)) "
@@ -497,81 +483,79 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
 
     public void testUpdateDeleteSavepointAndHistoricalSnapshotsKeepIndexVisibility() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index-history");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup, "create table index_anchor (id int) using delos_mvcc");
-                executeUpdate(setup,
-                        "create table index_history (id int, name varchar(64), score int) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 1, 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 2, 0);
-                executeUpdate(setup, "insert into index_anchor values (1)");
-                executeUpdate(setup, "insert into index_history values (1, 'old', 10)");
-                executeUpdate(setup, "insert into index_history values (2, 'delete-old', 20)");
-                setup.commit();
-            }
-
-            try (Connection historical = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                writer.setAutoCommit(false);
-                assertRows(historical, "select id from index_anchor", "1");
-
-                executeUpdate(writer,
-                        "update index_history set name = 'new', score = 30 where id = 1");
-                executeUpdate(writer, "delete from index_history where id = 2");
-                assertIndexedRows(writer,
-                        "select id, name, score from index_history where score = 30",
-                        "1|new|30");
-                assertIndexedRows(writer,
-                        "select id from index_history where score = 10");
-
-                Savepoint savepoint = writer.setSavepoint("before_index_rollback");
-                executeUpdate(writer,
-                        "update index_history set name = 'rolled-back', score = 40 where id = 1");
-                assertIndexedRows(writer,
-                        "select id, name from index_history where score = 40",
-                        "1|rolled-back");
-                writer.rollback(savepoint);
-                writer.releaseSavepoint(savepoint);
-                assertIndexedRows(writer,
-                        "select id, name from index_history where score = 30",
-                        "1|new");
-                assertIndexedRows(writer,
-                        "select id from index_history where score = 40");
-                writer.commit();
-
-                assertIndexedRows(historical,
-                        "select id, name from index_history where score = 10",
-                        "1|old");
-                assertIndexedRows(historical,
-                        "select id, name from index_history where score = 20",
-                        "2|delete-old");
-                historical.commit();
-
-                assertIndexedRows(historical,
-                        "select id, name, score from index_history where score = 30",
-                        "1|new|30");
-                assertIndexedRows(historical,
-                        "select id from index_history where score = 20");
-                historical.commit();
-
-                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
-                        MvccRawStoreMetadataInspection.orderedIndexEntries(writer, "INDEX_HISTORY");
-                assertTrue("historical ordered-index candidates must remain present",
-                        entries.stream().anyMatch(entry -> entry.columnId() == 1
-                                && entry.versionId() == 1L
-                                && "old".equals(entry.key())));
-                assertTrue("replacement ordered-index candidates must remain present",
-                        entries.stream().anyMatch(entry -> entry.columnId() == 1
-                                && entry.versionId() == 3L
-                                && "new".equals(entry.key())));
-                writer.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table index_anchor (id int) using delos_mvcc");
+            executeUpdate(setup,
+                    "create table index_history (id int, name varchar(64), score int) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 1, 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_HISTORY", 2, 0);
+            executeUpdate(setup, "insert into index_anchor values (1)");
+            executeUpdate(setup, "insert into index_history values (1, 'old', 10)");
+            executeUpdate(setup, "insert into index_history values (2, 'delete-old', 20)");
+            setup.commit();
         }
+
+        try (Connection historical = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            historical.setAutoCommit(false);
+            writer.setAutoCommit(false);
+            assertRows(historical, "select id from index_anchor", "1");
+
+            executeUpdate(writer,
+                    "update index_history set name = 'new', score = 30 where id = 1");
+            executeUpdate(writer, "delete from index_history where id = 2");
+            assertIndexedRows(writer,
+                    "select id, name, score from index_history where score = 30",
+                    "1|new|30");
+            assertIndexedRows(writer,
+                    "select id from index_history where score = 10");
+
+            Savepoint savepoint = writer.setSavepoint("before_index_rollback");
+            executeUpdate(writer,
+                    "update index_history set name = 'rolled-back', score = 40 where id = 1");
+            assertIndexedRows(writer,
+                    "select id, name from index_history where score = 40",
+                    "1|rolled-back");
+            writer.rollback(savepoint);
+            writer.releaseSavepoint(savepoint);
+            assertIndexedRows(writer,
+                    "select id, name from index_history where score = 30",
+                    "1|new");
+            assertIndexedRows(writer,
+                    "select id from index_history where score = 40");
+            writer.commit();
+
+            assertIndexedRows(historical,
+                    "select id, name from index_history where score = 10",
+                    "1|old");
+            assertIndexedRows(historical,
+                    "select id, name from index_history where score = 20",
+                    "2|delete-old");
+            historical.commit();
+
+            assertIndexedRows(historical,
+                    "select id, name, score from index_history where score = 30",
+                    "1|new|30");
+            assertIndexedRows(historical,
+                    "select id from index_history where score = 20");
+            historical.commit();
+
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> entries =
+                    MvccRawStoreMetadataInspection.orderedIndexEntries(writer, "INDEX_HISTORY");
+            assertTrue("historical ordered-index candidates must remain present",
+                    entries.stream().anyMatch(entry -> entry.columnId() == 1
+                            && entry.versionId() == 1L
+                            && "old".equals(entry.key())));
+            assertTrue("replacement ordered-index candidates must remain present",
+                    entries.stream().anyMatch(entry -> entry.columnId() == 1
+                            && entry.versionId() == 3L
+                            && "new".equals(entry.key())));
+            writer.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testOrderedIndexSurvivesBothRawStoreCrashBoundaries() throws Exception {
@@ -581,65 +565,62 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
 
     public void testPreIndexCompatibilityLazyRebuildAndMemoryUseSameRawStorePath() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index-compat");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table legacy_index_t (id int, name varchar(64)) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "LEGACY_INDEX_T", 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "LEGACY_INDEX_T", 1, 0);
-                executeUpdate(setup, "insert into legacy_index_t values (1, 'one')");
-                executeUpdate(setup, "insert into legacy_index_t values (2, 'two')");
-                setup.commit();
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table legacy_index_t (id int, name varchar(64)) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "LEGACY_INDEX_T", 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "LEGACY_INDEX_T", 1, 0);
+            executeUpdate(setup, "insert into legacy_index_t values (1, 'one')");
+            executeUpdate(setup, "insert into legacy_index_t values (2, 'two')");
+            setup.commit();
 
-                MvccRawStoreMetadataInspection.removeOrderedIndexForCompatibility(
-                        setup,
-                        "LEGACY_INDEX_T");
-                setup.commit();
-                assertEquals(0L, MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        setup,
-                        "LEGACY_INDEX_T"));
-                setup.commit();
-            }
-            shutdownDatabase(database);
-
-            try (Connection connection = openDatabase(database, false)) {
-                connection.setAutoCommit(false);
-                assertRows(connection,
-                        "select id, name from legacy_index_t where id = 2",
-                        "2|two");
-
-                executeUpdate(connection,
-                        "update legacy_index_t set name = 'two-v2' where id = 2");
-                connection.commit();
-                assertTrue(MvccRawStoreMetadataInspection.orderedIndexContainerId(
-                        connection,
-                        "LEGACY_INDEX_T") > 0L);
-                executeUpdate(
-                        connection,
-                        "call syscs_util.syscs_set_runtimestatistics(1)");
-                assertRows(connection,
-                        "select id, name from legacy_index_t where name = 'two-v2'",
-                        "2|two-v2");
-                assertFalse(
-                        "pre-constraint metadata must fall back instead of rebuilding "
-                                + "non-unique hidden candidates",
-                        runtimeStatistics(connection).contains(
-                                "delos_mvcc_rawstore_ordered_index"));
-                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> rebuiltEntries =
-                        MvccRawStoreMetadataInspection.orderedIndexEntries(
-                                connection,
-                                "LEGACY_INDEX_T");
-                assertTrue(rebuiltEntries.isEmpty());
-                connection.commit();
-            }
-            shutdownDatabase(database);
+            MvccRawStoreMetadataInspection.removeOrderedIndexForCompatibility(
+                    setup,
+                    "LEGACY_INDEX_T");
+            setup.commit();
+            assertEquals(0L, MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                    setup,
+                    "LEGACY_INDEX_T"));
+            setup.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection connection = openDatabase(database, false)) {
+            connection.setAutoCommit(false);
+            assertRows(connection,
+                    "select id, name from legacy_index_t where id = 2",
+                    "2|two");
+
+            executeUpdate(connection,
+                    "update legacy_index_t set name = 'two-v2' where id = 2");
+            connection.commit();
+            assertTrue(MvccRawStoreMetadataInspection.orderedIndexContainerId(
+                    connection,
+                    "LEGACY_INDEX_T") > 0L);
+            executeUpdate(
+                    connection,
+                    "call syscs_util.syscs_set_runtimestatistics(1)");
+            assertRows(connection,
+                    "select id, name from legacy_index_t where name = 'two-v2'",
+                    "2|two-v2");
+            assertFalse(
+                    "pre-constraint metadata must fall back instead of rebuilding "
+                            + "non-unique hidden candidates",
+                    runtimeStatistics(connection).contains(
+                            "delos_mvcc_rawstore_ordered_index"));
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> rebuiltEntries =
+                    MvccRawStoreMetadataInspection.orderedIndexEntries(
+                            connection,
+                            "LEGACY_INDEX_T");
+            assertTrue(rebuiltEntries.isEmpty());
+            connection.commit();
+        }
+        shutdownDatabase(database);
 
         String memoryDatabase = "mvcc_raw_store_ordered_index_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + memoryDatabase + ";create=true")) {
             connection.setAutoCommit(false);
             executeUpdate(connection,
@@ -667,63 +648,61 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
 
     public void testUnchangedIndexedValuesDoNotCreateRedundantCandidates() throws Exception {
         String database = databaseName("mvcc-raw-store-ordered-index-delta");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table index_delta (id int, name varchar(64), quantity int) "
-                                + "using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 1, 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 2, 0);
-                executeUpdate(setup, "insert into index_delta values (1, 'one', 10)");
-                setup.commit();
-            }
-
-            try (Connection historical = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                historical.setAutoCommit(false);
-                writer.setAutoCommit(false);
-                assertIndexedRows(historical,
-                        "select id, name, quantity from index_delta where id = 1",
-                        "1|one|10");
-
-                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> initial =
-                        MvccRawStoreMetadataInspection.orderedIndexEntries(
-                                writer, "INDEX_DELTA");
-                assertEquals("one initial candidate per indexed column", 3, initial.size());
-
-                executeUpdate(writer,
-                        "update index_delta set quantity = quantity + 1 where id = 1");
-                writer.commit();
-
-                List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> updated =
-                        MvccRawStoreMetadataInspection.orderedIndexEntries(
-                                writer, "INDEX_DELTA");
-                assertEquals("only the changed quantity key adds a candidate", 4, updated.size());
-                assertFalse("unchanged id key must not gain a second-version candidate",
-                        updated.stream().anyMatch(entry -> entry.columnId() == 0
-                                && entry.versionId() == 2L));
-                assertFalse("unchanged name key must not gain a second-version candidate",
-                        updated.stream().anyMatch(entry -> entry.columnId() == 1
-                                && entry.versionId() == 2L));
-                assertTrue("changed quantity key must retain its new historical candidate",
-                        updated.stream().anyMatch(entry -> entry.columnId() == 2
-                                && entry.versionId() == 2L
-                                && "11".equals(entry.key())));
-
-                assertIndexedRows(writer,
-                        "select id, name, quantity from index_delta where id = 1",
-                        "1|one|11");
-                writer.commit();
-                assertIndexedRows(historical,
-                        "select id, name, quantity from index_delta where id = 1",
-                        "1|one|10");
-                historical.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table index_delta (id int, name varchar(64), quantity int) "
+                            + "using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 1, 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "INDEX_DELTA", 2, 0);
+            executeUpdate(setup, "insert into index_delta values (1, 'one', 10)");
+            setup.commit();
         }
+
+        try (Connection historical = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            historical.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            historical.setAutoCommit(false);
+            writer.setAutoCommit(false);
+            assertIndexedRows(historical,
+                    "select id, name, quantity from index_delta where id = 1",
+                    "1|one|10");
+
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> initial =
+                    MvccRawStoreMetadataInspection.orderedIndexEntries(
+                            writer, "INDEX_DELTA");
+            assertEquals("one initial candidate per indexed column", 3, initial.size());
+
+            executeUpdate(writer,
+                    "update index_delta set quantity = quantity + 1 where id = 1");
+            writer.commit();
+
+            List<MvccRawStoreMetadataInspection.OrderedIndexIdentity> updated =
+                    MvccRawStoreMetadataInspection.orderedIndexEntries(
+                            writer, "INDEX_DELTA");
+            assertEquals("only the changed quantity key adds a candidate", 4, updated.size());
+            assertFalse("unchanged id key must not gain a second-version candidate",
+                    updated.stream().anyMatch(entry -> entry.columnId() == 0
+                            && entry.versionId() == 2L));
+            assertFalse("unchanged name key must not gain a second-version candidate",
+                    updated.stream().anyMatch(entry -> entry.columnId() == 1
+                            && entry.versionId() == 2L));
+            assertTrue("changed quantity key must retain its new historical candidate",
+                    updated.stream().anyMatch(entry -> entry.columnId() == 2
+                            && entry.versionId() == 2L
+                            && "11".equals(entry.key())));
+
+            assertIndexedRows(writer,
+                    "select id, name, quantity from index_delta where id = 1",
+                    "1|one|11");
+            writer.commit();
+            assertIndexedRows(historical,
+                    "select id, name, quantity from index_delta where id = 1",
+                    "1|one|10");
+            historical.commit();
+        }
+        shutdownDatabase(database);
     }
 
     private static void assertPhysicalTypedCoverage(
@@ -852,23 +831,20 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table crash_index_t (id int, name varchar(64), score int) using delos_mvcc");
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "CRASH_INDEX_T", 0);
-                MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "CRASH_INDEX_T", 2, 0);
-                executeUpdate(setup, "insert into crash_index_t values (1, 'old', 10)");
-                executeUpdate(setup, "insert into crash_index_t values (2, 'delete-old', 20)");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table crash_index_t (id int, name varchar(64), score int) using delos_mvcc");
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "CRASH_INDEX_T", 0);
+            MvccRawStoreMetadataInspection.addNativeUniqueConstraint(setup, "CRASH_INDEX_T", 2, 0);
+            executeUpdate(setup, "insert into crash_index_t values (1, 'old', 10)");
+            executeUpdate(setup, "insert into crash_index_t values (2, 'delete-old', 20)");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -884,8 +860,7 @@ public final class MvccRawStoreOrderedIndexTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             if (expectCommitted) {
                 assertIndexedRows(recovered,
                         "select id, name from crash_index_t where score = 30",

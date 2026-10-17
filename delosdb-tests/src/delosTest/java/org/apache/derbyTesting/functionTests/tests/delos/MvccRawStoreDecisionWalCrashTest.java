@@ -35,8 +35,6 @@ import java.util.concurrent.TimeUnit;
  * Stage 5 proof that one inherited RawStore recovery decision owns mixed heap/MVCC work.
  */
 public final class MvccRawStoreDecisionWalCrashTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final String BEFORE_RAW_COMMIT =
@@ -61,21 +59,18 @@ public final class MvccRawStoreDecisionWalCrashTest extends MvccSqlTestSupport {
                 .normalize();
         deleteRecursively(database);
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database.toString(), true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup,
-                        "create table decision_heap_t (id int primary key, value int)");
-                executeUpdate(setup,
-                        "create table decision_mvcc_t (id int, value int) using delos_mvcc");
-                setup.commit();
-            }
-            shutdownDatabase(database.toString());
+        try (Connection setup = openDatabase(database.toString(), true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup,
+                    "create table decision_heap_t (id int primary key, value int)");
+            executeUpdate(setup,
+                    "create table decision_mvcc_t (id int, value int) using delos_mvcc");
+            setup.commit();
         }
+        shutdownDatabase(database.toString());
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -96,20 +91,18 @@ public final class MvccRawStoreDecisionWalCrashTest extends MvccSqlTestSupport {
                 expectedStatus,
                 process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection recovered = openDatabase(database.toString(), false)) {
-                recovered.setAutoCommit(false);
-                String[] expectedRows = expectCommitted ? new String[] {"1|10"} : new String[0];
-                assertRows(recovered,
-                        "select id, value from decision_heap_t order by id",
-                        expectedRows);
-                assertRows(recovered,
-                        "select id, value from decision_mvcc_t order by id",
-                        expectedRows);
-                recovered.commit();
-            }
-            shutdownDatabase(database.toString());
+        try (Connection recovered = openDatabase(database.toString(), false)) {
+            recovered.setAutoCommit(false);
+            String[] expectedRows = expectCommitted ? new String[] {"1|10"} : new String[0];
+            assertRows(recovered,
+                    "select id, value from decision_heap_t order by id",
+                    expectedRows);
+            assertRows(recovered,
+                    "select id, value from decision_mvcc_t order by id",
+                    expectedRows);
+            recovered.commit();
         }
+        shutdownDatabase(database.toString());
 
         assertNoRetainedDecisionAuthority(database);
         deleteRecursively(database);

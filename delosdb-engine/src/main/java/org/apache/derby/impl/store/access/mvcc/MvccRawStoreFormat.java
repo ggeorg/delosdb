@@ -21,7 +21,6 @@ import org.apache.derby.shared.common.error.StandardException;
 
 /** Physical row definitions for the isolated RawStore-backed MVCC format. */
 final class MvccRawStoreFormat {
-    static final String ENABLED_PROPERTY = "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     static final String GEN2_A1_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2A1.enabled";
     static final String GEN2_B_PK_ENABLED_PROPERTY = "delosdb.experimental.mvccGen2B.pk.enabled";
     static final String GEN2_C1_HISTORY_ENABLED_PROPERTY =

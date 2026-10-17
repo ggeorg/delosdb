@@ -28,8 +28,6 @@ import org.apache.derby.impl.store.raw.data.RawStoreIoFaultInjectionTestSupport;
 
 /** Stage 8.3 deterministic shared RawStore I/O fault and replay proofs. */
 public final class SharedRawStoreIoFaultInjectionTest extends MvccSqlTestSupport {
-    private static final String RAWSTORE_ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final int HALT_STATUS = 93;
 
     public void testControllerIsExactSeededBoundedAndDisabledByDefault()
@@ -106,8 +104,7 @@ public final class SharedRawStoreIoFaultInjectionTest extends MvccSqlTestSupport
         deleteRecursively(first);
         deleteRecursively(second);
 
-        try (SystemPropertyScope ignored =
-                     setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
+        try {
             try (Connection firstConnection = openDatabase(first.toString(), true);
                  Connection secondConnection = openDatabase(second.toString(), true)) {
                 executeUpdate(firstConnection,
@@ -176,28 +173,24 @@ public final class SharedRawStoreIoFaultInjectionTest extends MvccSqlTestSupport
         String expectedDigest = sha256(expectedCanonical);
 
         try {
-            try (SystemPropertyScope ignored =
-                         setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
-                try (Connection setup = openDatabase(database.toString(), true)) {
-                    setup.setAutoCommit(false);
-                    executeUpdate(setup,
-                            "create table io_fault_heap_t "
-                                    + "(id int primary key, value int)");
-                    executeUpdate(setup,
-                            "create table io_fault_mvcc_t "
-                                    + "(id int primary key, value int) using delos_mvcc");
-                    executeUpdate(setup,
-                            "insert into io_fault_heap_t values (1, 10)");
-                    executeUpdate(setup,
-                            "insert into io_fault_mvcc_t values (1, 100)");
-                    setup.commit();
-                }
-                shutdownDatabase(database.toString());
+            try (Connection setup = openDatabase(database.toString(), true)) {
+                setup.setAutoCommit(false);
+                executeUpdate(setup,
+                        "create table io_fault_heap_t "
+                                + "(id int primary key, value int)");
+                executeUpdate(setup,
+                        "create table io_fault_mvcc_t "
+                                + "(id int primary key, value int) using delos_mvcc");
+                executeUpdate(setup,
+                        "insert into io_fault_heap_t values (1, 10)");
+                executeUpdate(setup,
+                        "insert into io_fault_mvcc_t values (1, 100)");
+                setup.commit();
             }
+            shutdownDatabase(database.toString());
 
             Process worker = new ProcessBuilder(
                     javaExecutable(),
-                    "-D" + RAWSTORE_ENABLED_PROPERTY + "=true",
                     "-cp",
                     System.getProperty("java.class.path"),
                     HaltWorker.class.getName(),
@@ -220,37 +213,31 @@ public final class SharedRawStoreIoFaultInjectionTest extends MvccSqlTestSupport
 
             String firstObserved;
             String databaseIdentity;
-            try (SystemPropertyScope ignored =
-                         setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
-                try (Connection recovered = openDatabase(database.toString(), false)) {
-                    recovered.setAutoCommit(false);
-                    assertRows(recovered,
-                            "select id, value from io_fault_heap_t order by id",
-                            "1|10", "2|20");
-                    assertRows(recovered,
-                            "select id, value from io_fault_mvcc_t order by id",
-                            "1|100", "2|200");
-                    assertTableAbsent(recovered, "IO_FAULT_UNCOMMITTED_T");
-                    firstObserved = canonicalState(recovered);
-                    databaseIdentity = snapshot(database).databaseIdentity();
-                    recovered.commit();
-                }
-                shutdownDatabase(database.toString());
+            try (Connection recovered = openDatabase(database.toString(), false)) {
+                recovered.setAutoCommit(false);
+                assertRows(recovered,
+                        "select id, value from io_fault_heap_t order by id",
+                        "1|10", "2|20");
+                assertRows(recovered,
+                        "select id, value from io_fault_mvcc_t order by id",
+                        "1|100", "2|200");
+                assertTableAbsent(recovered, "IO_FAULT_UNCOMMITTED_T");
+                firstObserved = canonicalState(recovered);
+                databaseIdentity = snapshot(database).databaseIdentity();
+                recovered.commit();
             }
+            shutdownDatabase(database.toString());
             assertEquals(expectedCanonical, firstObserved);
             assertEquals(expectedDigest, sha256(firstObserved));
 
             String secondObserved;
-            try (SystemPropertyScope ignored =
-                         setSystemProperty(RAWSTORE_ENABLED_PROPERTY, "true")) {
-                try (Connection replayed = openDatabase(database.toString(), false)) {
-                    replayed.setAutoCommit(false);
-                    assertTableAbsent(replayed, "IO_FAULT_UNCOMMITTED_T");
-                    secondObserved = canonicalState(replayed);
-                    replayed.commit();
-                }
-                shutdownDatabase(database.toString());
+            try (Connection replayed = openDatabase(database.toString(), false)) {
+                replayed.setAutoCommit(false);
+                assertTableAbsent(replayed, "IO_FAULT_UNCOMMITTED_T");
+                secondObserved = canonicalState(replayed);
+                replayed.commit();
             }
+            shutdownDatabase(database.toString());
             assertEquals(firstObserved, secondObserved);
             String observedDigest = sha256(secondObserved);
             assertEquals(expectedDigest, observedDigest);

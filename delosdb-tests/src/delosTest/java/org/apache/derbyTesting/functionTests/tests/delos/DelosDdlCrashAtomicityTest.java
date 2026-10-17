@@ -31,8 +31,6 @@ import java.util.concurrent.TimeUnit;
 
 /** Stage 6 proof that supported DDL recovers wholly before or after RawStore commit. */
 public final class DelosDdlCrashAtomicityTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
@@ -46,25 +44,22 @@ public final class DelosDdlCrashAtomicityTest extends MvccSqlTestSupport {
         String database = Path.of("stage6-ma009-ddl-crash-" + expectedStatus + '-'
                 + Long.toUnsignedString(System.nanoTime()))
                 .toAbsolutePath().normalize().toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                executeUpdate(setup, "create table ddl_heap_t (id int primary key, value int)");
-                executeUpdate(setup,
-                        "create table ddl_mvcc_t (id int primary key, value int) using delos_mvcc");
-                executeUpdate(setup,
-                        "create table ddl_witness_t (id int primary key, value int) using delos_mvcc");
-                executeUpdate(setup, "insert into ddl_heap_t values (1, 10)");
-                executeUpdate(setup, "insert into ddl_mvcc_t values (1, 10)");
-                executeUpdate(setup, "insert into ddl_witness_t values (1, 10)");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            executeUpdate(setup, "create table ddl_heap_t (id int primary key, value int)");
+            executeUpdate(setup,
+                    "create table ddl_mvcc_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(setup,
+                    "create table ddl_witness_t (id int primary key, value int) using delos_mvcc");
+            executeUpdate(setup, "insert into ddl_heap_t values (1, 10)");
+            executeUpdate(setup, "insert into ddl_mvcc_t values (1, 10)");
+            executeUpdate(setup, "insert into ddl_witness_t values (1, 10)");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp", System.getProperty("java.class.path"),
                 CrashWorker.class.getName(), database)
@@ -78,8 +73,7 @@ public final class DelosDdlCrashAtomicityTest extends MvccSqlTestSupport {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection recovered = openDatabase(database, false)) {
+        try (Connection recovered = openDatabase(database, false)) {
             recovered.setAutoCommit(false);
             assertCatalogCount(recovered, "select count(*) from sys.syscolumns c, sys.systables t "
                     + "where c.referenceid=t.tableid and t.tablename='DDL_HEAP_T' "

@@ -21,104 +21,98 @@ import java.util.concurrent.TimeUnit;
 
 /** One RawStore outcome and one MVCC snapshot across multiple RawStore-backed tables. */
 public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
     public void testTwoTableCommitRollbackAndSavepointUseOneRawStoreOutcome() throws Exception {
         String database = databaseName("mvcc-raw-store-multi-table-outcome");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                createTables(connection, "multi_a", "multi_b");
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            createTables(connection, "multi_a", "multi_b");
 
-                executeUpdate(connection, "insert into multi_a values (1, 'a-commit')");
-                executeUpdate(connection, "insert into multi_b values (2, 'b-commit')");
-                assertRows(connection, "select id, name from multi_a", "1|a-commit");
-                assertRows(connection, "select id, name from multi_b", "2|b-commit");
-                connection.commit();
+            executeUpdate(connection, "insert into multi_a values (1, 'a-commit')");
+            executeUpdate(connection, "insert into multi_b values (2, 'b-commit')");
+            assertRows(connection, "select id, name from multi_a", "1|a-commit");
+            assertRows(connection, "select id, name from multi_b", "2|b-commit");
+            connection.commit();
 
-                assertCounters(connection, 2L, 65L, 64L);
-                assertVersionIdentities(connection, "MULTI_A", new long[][] {{1L, 1L}});
-                assertVersionIdentities(connection, "MULTI_B", new long[][] {{1L, 1L}});
-                connection.commit();
+            assertCounters(connection, 2L, 65L, 64L);
+            assertVersionIdentities(connection, "MULTI_A", new long[][] {{1L, 1L}});
+            assertVersionIdentities(connection, "MULTI_B", new long[][] {{1L, 1L}});
+            connection.commit();
 
-                executeUpdate(connection, "insert into multi_a values (3, 'a-rollback')");
-                executeUpdate(connection, "insert into multi_b values (4, 'b-rollback')");
-                connection.rollback();
-                assertRows(connection, "select id from multi_a where id = 3");
-                assertRows(connection, "select id from multi_b where id = 4");
-                assertCounters(connection, 3L, 65L, 64L);
-                connection.commit();
+            executeUpdate(connection, "insert into multi_a values (3, 'a-rollback')");
+            executeUpdate(connection, "insert into multi_b values (4, 'b-rollback')");
+            connection.rollback();
+            assertRows(connection, "select id from multi_a where id = 3");
+            assertRows(connection, "select id from multi_b where id = 4");
+            assertCounters(connection, 3L, 65L, 64L);
+            connection.commit();
 
-                executeUpdate(connection, "insert into multi_a values (5, 'a-savepoint')");
-                Savepoint savepoint = connection.setSavepoint("before_second_table");
-                executeUpdate(connection, "insert into multi_b values (6, 'b-savepoint-rollback')");
-                connection.rollback(savepoint);
-                connection.releaseSavepoint(savepoint);
-                connection.commit();
+            executeUpdate(connection, "insert into multi_a values (5, 'a-savepoint')");
+            Savepoint savepoint = connection.setSavepoint("before_second_table");
+            executeUpdate(connection, "insert into multi_b values (6, 'b-savepoint-rollback')");
+            connection.rollback(savepoint);
+            connection.releaseSavepoint(savepoint);
+            connection.commit();
 
-                assertRows(connection,
-                        "select id, name from multi_a order by id",
-                        "1|a-commit",
-                        "5|a-savepoint");
-                assertRows(connection,
-                        "select id, name from multi_b order by id",
-                        "2|b-commit");
-                assertCounters(connection, 4L, 65L, 64L);
-                assertVersionIdentities(
-                        connection,
-                        "MULTI_A",
-                        new long[][] {{1L, 1L}, {3L, 2L}});
-                assertVersionIdentities(
-                        connection,
-                        "MULTI_B",
-                        new long[][] {{1L, 1L}});
-                connection.commit();
-            }
-            shutdownDatabase(database);
-
-            try (Connection reopened = openDatabase(database, false)) {
-                assertRows(reopened,
-                        "select id, name from multi_a order by id",
-                        "1|a-commit",
-                        "5|a-savepoint");
-                assertRows(reopened,
-                        "select id, name from multi_b order by id",
-                        "2|b-commit");
-            }
-            shutdownDatabase(database);
+            assertRows(connection,
+                    "select id, name from multi_a order by id",
+                    "1|a-commit",
+                    "5|a-savepoint");
+            assertRows(connection,
+                    "select id, name from multi_b order by id",
+                    "2|b-commit");
+            assertCounters(connection, 4L, 65L, 64L);
+            assertVersionIdentities(
+                    connection,
+                    "MULTI_A",
+                    new long[][] {{1L, 1L}, {3L, 2L}});
+            assertVersionIdentities(
+                    connection,
+                    "MULTI_B",
+                    new long[][] {{1L, 1L}});
+            connection.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            assertRows(reopened,
+                    "select id, name from multi_a order by id",
+                    "1|a-commit",
+                    "5|a-savepoint");
+            assertRows(reopened,
+                    "select id, name from multi_b order by id",
+                    "2|b-commit");
+        }
+        shutdownDatabase(database);
     }
 
     public void testTransactionSnapshotIsStableAcrossRawStoreTables() throws Exception {
         String database = databaseName("mvcc-raw-store-multi-table-snapshot");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                createTables(setup, "snapshot_a", "snapshot_b");
-                executeUpdate(setup, "insert into snapshot_a values (1, 'baseline')");
-                setup.commit();
-            }
-
-            try (Connection reader = openDatabase(database, false);
-                 Connection writer = openDatabase(database, false)) {
-                reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
-                reader.setAutoCommit(false);
-                writer.setAutoCommit(false);
-
-                assertRows(reader, "select id from snapshot_a", "1");
-                executeUpdate(writer, "insert into snapshot_b values (2, 'after-snapshot')");
-                writer.commit();
-
-                assertRows(reader, "select id from snapshot_b where id = 2");
-                reader.commit();
-                assertRows(reader, "select id from snapshot_b where id = 2", "2");
-                reader.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            createTables(setup, "snapshot_a", "snapshot_b");
+            executeUpdate(setup, "insert into snapshot_a values (1, 'baseline')");
+            setup.commit();
         }
+
+        try (Connection reader = openDatabase(database, false);
+             Connection writer = openDatabase(database, false)) {
+            reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            reader.setAutoCommit(false);
+            writer.setAutoCommit(false);
+
+            assertRows(reader, "select id from snapshot_a", "1");
+            executeUpdate(writer, "insert into snapshot_b values (2, 'after-snapshot')");
+            writer.commit();
+
+            assertRows(reader, "select id from snapshot_b where id = 2");
+            reader.commit();
+            assertRows(reader, "select id from snapshot_b where id = 2", "2");
+            reader.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testTwoTableCommitSurvivesBothRawStoreCrashBoundaries() throws Exception {
@@ -129,8 +123,7 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
     public void testMemoryDatabaseSupportsTwoTableTransactions() throws Exception {
         String database = "mvcc_raw_store_multi_table_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             connection.setAutoCommit(false);
             createTables(connection, "memory_a", "memory_b");
@@ -162,17 +155,14 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                createTables(setup, "crash_a", "crash_b");
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            createTables(setup, "crash_a", "crash_b");
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -188,26 +178,24 @@ public final class MvccRawStoreMultiTableTransactionTest extends MvccSqlTestSupp
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection recovered = openDatabase(database, false)) {
-                recovered.setAutoCommit(false);
-                if (expectCommitted) {
-                    assertRows(recovered, "select id, name from crash_a", "1|a");
-                    assertRows(recovered, "select id, name from crash_b", "2|b");
-                    assertCounters(recovered, 2L, 65L, 64L);
-                    assertVersionIdentities(recovered, "CRASH_A", new long[][] {{1L, 1L}});
-                    assertVersionIdentities(recovered, "CRASH_B", new long[][] {{1L, 1L}});
-                } else {
-                    assertRows(recovered, "select id from crash_a");
-                    assertRows(recovered, "select id from crash_b");
-                    assertCounters(recovered, 2L, 65L, 64L);
-                    assertVersionIdentities(recovered, "CRASH_A", new long[0][0]);
-                    assertVersionIdentities(recovered, "CRASH_B", new long[0][0]);
-                }
-                recovered.commit();
+        try (Connection recovered = openDatabase(database, false)) {
+            recovered.setAutoCommit(false);
+            if (expectCommitted) {
+                assertRows(recovered, "select id, name from crash_a", "1|a");
+                assertRows(recovered, "select id, name from crash_b", "2|b");
+                assertCounters(recovered, 2L, 65L, 64L);
+                assertVersionIdentities(recovered, "CRASH_A", new long[][] {{1L, 1L}});
+                assertVersionIdentities(recovered, "CRASH_B", new long[][] {{1L, 1L}});
+            } else {
+                assertRows(recovered, "select id from crash_a");
+                assertRows(recovered, "select id from crash_b");
+                assertCounters(recovered, 2L, 65L, 64L);
+                assertVersionIdentities(recovered, "CRASH_A", new long[0][0]);
+                assertVersionIdentities(recovered, "CRASH_B", new long[0][0]);
             }
-            shutdownDatabase(database);
+            recovered.commit();
         }
+        shutdownDatabase(database);
     }
 
     private static void createTables(Connection connection, String first, String second)

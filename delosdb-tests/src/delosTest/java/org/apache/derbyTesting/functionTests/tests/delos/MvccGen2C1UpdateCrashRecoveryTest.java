@@ -51,8 +51,6 @@ public final class MvccGen2C1UpdateCrashRecoveryTest extends MvccSqlTestSupport 
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
     private static final String MAINTENANCE_PROPERTY =
             "delosdb.mvcc.rawStoreMaintenance.enabled";
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String REPORT_PROPERTY =
             "delosdb.gen2C1UpdateRecovery.reportDirectory";
     private static final String TABLE = "C1_CRASH_T";
@@ -106,7 +104,6 @@ public final class MvccGen2C1UpdateCrashRecoveryTest extends MvccSqlTestSupport 
                         "delosdb.experimental.mvccGen2B.pk.enabled");
              SystemPropertyScope failure = clearSystemProperty(FAILURE_PROPERTY);
              SystemPropertyScope maintenance = setSystemProperty(MAINTENANCE_PROPERTY, "false");
-             SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
              SystemPropertyScope c1 = setSystemProperty(C1_PROPERTY, "false")) {
             try (Connection setup = openDatabase(database, true)) {
                 setup.setAutoCommit(false);
@@ -206,8 +203,7 @@ public final class MvccGen2C1UpdateCrashRecoveryTest extends MvccSqlTestSupport 
              SystemPropertyScope b1 = clearSystemProperty(
                         "delosdb.experimental.mvccGen2B.pk.enabled");
              SystemPropertyScope failure = clearSystemProperty(FAILURE_PROPERTY);
-             SystemPropertyScope maintenance = setSystemProperty(MAINTENANCE_PROPERTY, "false");
-             SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true")) {
+             SystemPropertyScope maintenance = setSystemProperty(MAINTENANCE_PROPERTY, "false")) {
             for (Engine engine : Engine.values()) {
                 verifyCase(shape, boundary, engine);
             }
@@ -244,7 +240,6 @@ public final class MvccGen2C1UpdateCrashRecoveryTest extends MvccSqlTestSupport 
         List<String> command = new ArrayList<>();
         command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
         command.add("-Xmx512m");
-        command.add("-D" + ENABLED_PROPERTY + "=true");
         command.add("-D" + MAINTENANCE_PROPERTY + "=false");
         // Only creation selects the layout. Recovery must use the persisted format.
         command.add("-D" + C1_PROPERTY + "=false");

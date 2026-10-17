@@ -20,85 +20,81 @@ import java.util.concurrent.TimeUnit;
 
 /** One inherited RawStore outcome across heap and RawStore-backed MVCC mutations. */
 public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final String FAILURE_POINT_PROPERTY =
             "delosdb.mvcc.rawStoreVerticalSlice.failurePoint";
 
     public void testMixedHeapMvccCommitRollbackSavepointAndReopen() throws Exception {
         String database = databaseName("mvcc-raw-store-mixed-heap-file");
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection connection = openDatabase(database, true)) {
-                connection.setAutoCommit(false);
-                createTables(connection, "heap_t", "mvcc_t");
+        try (Connection connection = openDatabase(database, true)) {
+            connection.setAutoCommit(false);
+            createTables(connection, "heap_t", "mvcc_t");
 
-                executeUpdate(connection, "insert into heap_t values (1, 'heap-one')");
-                executeUpdate(connection, "insert into mvcc_t values (1, 'mvcc-one')");
-                connection.commit();
-                assertCounters(connection, 2L, 65L, 64L);
-                connection.commit();
+            executeUpdate(connection, "insert into heap_t values (1, 'heap-one')");
+            executeUpdate(connection, "insert into mvcc_t values (1, 'mvcc-one')");
+            connection.commit();
+            assertCounters(connection, 2L, 65L, 64L);
+            connection.commit();
 
-                executeUpdate(connection, "insert into mvcc_t values (2, 'mvcc-rollback')");
-                executeUpdate(connection, "insert into heap_t values (2, 'heap-rollback')");
-                executeUpdate(connection, "update mvcc_t set name = 'mvcc-rollback-update' where id = 1");
-                executeUpdate(connection, "update heap_t set name = 'heap-rollback-update' where id = 1");
-                connection.rollback();
-                assertRows(connection, "select id, name from heap_t order by id", "1|heap-one");
-                assertRows(connection, "select id, name from mvcc_t order by id", "1|mvcc-one");
-                assertCounters(connection, 3L, 65L, 64L);
-                connection.commit();
+            executeUpdate(connection, "insert into mvcc_t values (2, 'mvcc-rollback')");
+            executeUpdate(connection, "insert into heap_t values (2, 'heap-rollback')");
+            executeUpdate(connection, "update mvcc_t set name = 'mvcc-rollback-update' where id = 1");
+            executeUpdate(connection, "update heap_t set name = 'heap-rollback-update' where id = 1");
+            connection.rollback();
+            assertRows(connection, "select id, name from heap_t order by id", "1|heap-one");
+            assertRows(connection, "select id, name from mvcc_t order by id", "1|mvcc-one");
+            assertCounters(connection, 3L, 65L, 64L);
+            connection.commit();
 
-                executeUpdate(connection, "insert into heap_t values (3, 'heap-before-savepoint')");
-                executeUpdate(connection, "insert into mvcc_t values (3, 'mvcc-before-savepoint')");
-                Savepoint savepoint = connection.setSavepoint("mixed_before_tail");
-                executeUpdate(connection, "update heap_t set name = 'heap-after-savepoint' where id = 1");
-                executeUpdate(connection, "update mvcc_t set name = 'mvcc-after-savepoint' where id = 1");
-                executeUpdate(connection, "insert into heap_t values (4, 'heap-after-savepoint')");
-                executeUpdate(connection, "insert into mvcc_t values (4, 'mvcc-after-savepoint')");
-                connection.rollback(savepoint);
-                connection.releaseSavepoint(savepoint);
-                connection.commit();
+            executeUpdate(connection, "insert into heap_t values (3, 'heap-before-savepoint')");
+            executeUpdate(connection, "insert into mvcc_t values (3, 'mvcc-before-savepoint')");
+            Savepoint savepoint = connection.setSavepoint("mixed_before_tail");
+            executeUpdate(connection, "update heap_t set name = 'heap-after-savepoint' where id = 1");
+            executeUpdate(connection, "update mvcc_t set name = 'mvcc-after-savepoint' where id = 1");
+            executeUpdate(connection, "insert into heap_t values (4, 'heap-after-savepoint')");
+            executeUpdate(connection, "insert into mvcc_t values (4, 'mvcc-after-savepoint')");
+            connection.rollback(savepoint);
+            connection.releaseSavepoint(savepoint);
+            connection.commit();
 
-                assertRows(connection,
-                        "select id, name from heap_t order by id",
-                        "1|heap-one",
-                        "3|heap-before-savepoint");
-                assertRows(connection,
-                        "select id, name from mvcc_t order by id",
-                        "1|mvcc-one",
-                        "3|mvcc-before-savepoint");
-                assertCounters(connection, 4L, 65L, 64L);
-                connection.commit();
+            assertRows(connection,
+                    "select id, name from heap_t order by id",
+                    "1|heap-one",
+                    "3|heap-before-savepoint");
+            assertRows(connection,
+                    "select id, name from mvcc_t order by id",
+                    "1|mvcc-one",
+                    "3|mvcc-before-savepoint");
+            assertCounters(connection, 4L, 65L, 64L);
+            connection.commit();
 
-                executeUpdate(connection, "delete from mvcc_t where id = 1");
-                executeUpdate(connection, "delete from heap_t where id = 1");
-                connection.commit();
-                assertRows(connection, "select id, name from heap_t order by id", "3|heap-before-savepoint");
-                assertRows(connection, "select id, name from mvcc_t order by id", "3|mvcc-before-savepoint");
-                assertCounters(connection, 5L, 65L, 64L);
-                connection.commit();
+            executeUpdate(connection, "delete from mvcc_t where id = 1");
+            executeUpdate(connection, "delete from heap_t where id = 1");
+            connection.commit();
+            assertRows(connection, "select id, name from heap_t order by id", "3|heap-before-savepoint");
+            assertRows(connection, "select id, name from mvcc_t order by id", "3|mvcc-before-savepoint");
+            assertCounters(connection, 5L, 65L, 64L);
+            connection.commit();
 
-                executeUpdate(connection, "insert into heap_t values (5, 'heap-only')");
-                connection.commit();
-                assertCounters(connection, 5L, 65L, 64L);
-                connection.commit();
-            }
-            shutdownDatabase(database);
-
-            try (Connection reopened = openDatabase(database, false)) {
-                reopened.setAutoCommit(false);
-                assertRows(reopened,
-                        "select id, name from heap_t order by id",
-                        "3|heap-before-savepoint",
-                        "5|heap-only");
-                assertRows(reopened,
-                        "select id, name from mvcc_t order by id",
-                        "3|mvcc-before-savepoint");
-                assertCounters(reopened, 5L, 65L, 64L);
-                reopened.commit();
-            }
-            shutdownDatabase(database);
+            executeUpdate(connection, "insert into heap_t values (5, 'heap-only')");
+            connection.commit();
+            assertCounters(connection, 5L, 65L, 64L);
+            connection.commit();
         }
+        shutdownDatabase(database);
+
+        try (Connection reopened = openDatabase(database, false)) {
+            reopened.setAutoCommit(false);
+            assertRows(reopened,
+                    "select id, name from heap_t order by id",
+                    "3|heap-before-savepoint",
+                    "5|heap-only");
+            assertRows(reopened,
+                    "select id, name from mvcc_t order by id",
+                    "3|mvcc-before-savepoint");
+            assertCounters(reopened, 5L, 65L, 64L);
+            reopened.commit();
+        }
+        shutdownDatabase(database);
     }
 
     public void testMixedHeapMvccCommitSurvivesBothRawStoreCrashBoundaries() throws Exception {
@@ -109,8 +105,7 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
     public void testMemoryDatabaseSupportsMixedHeapMvccTransactions() throws Exception {
         String database = "mvcc_raw_store_mixed_heap_memory_"
                 + Long.toUnsignedString(System.nanoTime());
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true");
-             Connection connection = DriverManager.getConnection(
+        try (Connection connection = DriverManager.getConnection(
                      "jdbc:derby:memory:" + database + ";create=true")) {
             connection.setAutoCommit(false);
             createTables(connection, "memory_heap", "memory_mvcc");
@@ -148,22 +143,19 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
                 .toAbsolutePath()
                 .normalize()
                 .toString();
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection setup = openDatabase(database, true)) {
-                setup.setAutoCommit(false);
-                createTables(setup, "crash_heap", "crash_mvcc");
-                executeUpdate(setup, "insert into crash_heap values (1, 'heap-old')");
-                executeUpdate(setup, "insert into crash_mvcc values (1, 'mvcc-old')");
-                executeUpdate(setup, "insert into crash_heap values (2, 'heap-delete')");
-                executeUpdate(setup, "insert into crash_mvcc values (2, 'mvcc-delete')");
-                setup.commit();
-            }
-            shutdownDatabase(database);
+        try (Connection setup = openDatabase(database, true)) {
+            setup.setAutoCommit(false);
+            createTables(setup, "crash_heap", "crash_mvcc");
+            executeUpdate(setup, "insert into crash_heap values (1, 'heap-old')");
+            executeUpdate(setup, "insert into crash_mvcc values (1, 'mvcc-old')");
+            executeUpdate(setup, "insert into crash_heap values (2, 'heap-delete')");
+            executeUpdate(setup, "insert into crash_mvcc values (2, 'mvcc-delete')");
+            setup.commit();
         }
+        shutdownDatabase(database);
 
         Process process = new ProcessBuilder(
                 javaExecutable(),
-                "-D" + ENABLED_PROPERTY + "=true",
                 "-D" + FAILURE_POINT_PROPERTY + '=' + failurePoint,
                 "-cp",
                 System.getProperty("java.class.path"),
@@ -179,34 +171,32 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertEquals("unexpected crash status; output=" + output, expectedStatus, process.exitValue());
 
-        try (SystemPropertyScope ignored = setSystemProperty(ENABLED_PROPERTY, "true")) {
-            try (Connection recovered = openDatabase(database, false)) {
-                recovered.setAutoCommit(false);
-                if (expectCommitted) {
-                    assertRows(recovered,
-                            "select id, name from crash_heap order by id",
-                            "1|heap-new",
-                            "3|heap-insert");
-                    assertRows(recovered,
-                            "select id, name from crash_mvcc order by id",
-                            "1|mvcc-new",
-                            "3|mvcc-insert");
-                    assertCounters(recovered, 3L, 129L, 128L);
-                } else {
-                    assertRows(recovered,
-                            "select id, name from crash_heap order by id",
-                            "1|heap-old",
-                            "2|heap-delete");
-                    assertRows(recovered,
-                            "select id, name from crash_mvcc order by id",
-                            "1|mvcc-old",
-                            "2|mvcc-delete");
-                    assertCounters(recovered, 3L, 129L, 128L);
-                }
-                recovered.commit();
+        try (Connection recovered = openDatabase(database, false)) {
+            recovered.setAutoCommit(false);
+            if (expectCommitted) {
+                assertRows(recovered,
+                        "select id, name from crash_heap order by id",
+                        "1|heap-new",
+                        "3|heap-insert");
+                assertRows(recovered,
+                        "select id, name from crash_mvcc order by id",
+                        "1|mvcc-new",
+                        "3|mvcc-insert");
+                assertCounters(recovered, 3L, 129L, 128L);
+            } else {
+                assertRows(recovered,
+                        "select id, name from crash_heap order by id",
+                        "1|heap-old",
+                        "2|heap-delete");
+                assertRows(recovered,
+                        "select id, name from crash_mvcc order by id",
+                        "1|mvcc-old",
+                        "2|mvcc-delete");
+                assertCounters(recovered, 3L, 129L, 128L);
             }
-            shutdownDatabase(database);
+            recovered.commit();
         }
+        shutdownDatabase(database);
     }
 
     private static void createTables(Connection connection, String heapTable, String mvccTable)
@@ -256,7 +246,6 @@ public final class MvccRawStoreMixedHeapTransactionTest extends MvccSqlTestSuppo
         }
 
         public static void main(String[] args) throws Exception {
-            System.setProperty(ENABLED_PROPERTY, "true");
             try (Connection connection = openDatabase(args[0], false)) {
                 connection.setAutoCommit(false);
                 executeUpdate(connection, "update crash_heap set name = 'heap-new' where id = 1");

@@ -43,8 +43,6 @@ import org.apache.derbyTesting.functionTests.tests.delos.isolation.DelosIsolatio
 
 /** Executes one DelosDB isolation specification over its declared matrix. */
 final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
-    private static final String MVCC_ENABLED_PROPERTY =
-            "delosdb.mvcc.rawStoreVerticalSlice.enabled";
     private static final long DEFAULT_AWAIT_MILLIS = 10_000L;
 
     private DelosIsolationSpecificationRunner() {
@@ -84,29 +82,25 @@ final class DelosIsolationSpecificationRunner extends MvccSqlTestSupport {
         String label = specification.id() + '/' + permutation.name() + '/'
                 + provider.name().toLowerCase() + '/' + storage.name().toLowerCase();
 
-        try (SystemPropertyScope ignored = provider == DelosIsolationSpecification.Provider.MVCC
-                ? setSystemProperty(MVCC_ENABLED_PROPERTY, "true")
-                : clearSystemProperty(MVCC_ENABLED_PROPERTY)) {
-            Throwable failure = null;
+        Throwable failure = null;
+        try {
+            createAndSetUpDatabase(database, specification, provider);
+            List<StepOutcome> outcomes = executePermutation(
+                    database, specification, permutation, provider, label);
+            assertSqlStateCounts(permutation, outcomes, label);
+            assertFinalState(database, specification, provider, storage, label);
+            executeTeardown(database, specification, provider);
+        } catch (Exception | Error caseFailure) {
+            failure = caseFailure;
+            throw caseFailure;
+        } finally {
             try {
-                createAndSetUpDatabase(database, specification, provider);
-                List<StepOutcome> outcomes = executePermutation(
-                        database, specification, permutation, provider, label);
-                assertSqlStateCounts(permutation, outcomes, label);
-                assertFinalState(database, specification, provider, storage, label);
-                executeTeardown(database, specification, provider);
-            } catch (Exception | Error caseFailure) {
-                failure = caseFailure;
-                throw caseFailure;
-            } finally {
-                try {
-                    shutdownDatabase(database);
-                } catch (SQLException shutdownFailure) {
-                    if (failure == null) {
-                        throw shutdownFailure;
-                    }
-                    failure.addSuppressed(shutdownFailure);
+                shutdownDatabase(database);
+            } catch (SQLException shutdownFailure) {
+                if (failure == null) {
+                    throw shutdownFailure;
                 }
+                failure.addSuppressed(shutdownFailure);
             }
         }
     }
