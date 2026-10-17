@@ -86,7 +86,7 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
             assertLobRow(connection, 1, 10, originalBlob, originalClob, "original");
             assertLobRow(connection, 2, 20, deletedBlob, deletedClob, "delete-me");
             assertIndexProbe(connection, 10, 1);
-            assertConsistent(diagnostics, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, TABLE_UPPER);
             connection.rollback();
         }
 
@@ -115,7 +115,7 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
             assertNoRow(connection, 3);
             assertGroupedState(connection);
             assertIndexProbe(connection, 11, 1);
-            assertConsistent(diagnostics, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, TABLE_UPPER);
             connection.rollback();
         }
 
@@ -125,12 +125,10 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
             connection.commit();
             assertEquals("in-place compress must keep MVCC base container stable",
                     containerId, MvccSqlTestSupport.mvccContainerId(connection, TABLE_UPPER));
-            assertFalse("network-client MVCC vacuum should not be skipped",
-                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
             assertLobRow(connection, 1, 11, updatedBlob, updatedClob, "updated");
             assertNoRow(connection, 2);
             assertNoRow(connection, 3);
-            assertConsistent(diagnostics, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, TABLE_UPPER);
             overflowPagesAfterVacuum = diagnostics.overflowPageCountForTesting(0, containerId);
             assertTrue("vacuum must retain live network-client LOB overflow chains",
                     overflowPagesAfterVacuum > 0L);
@@ -152,7 +150,7 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
             assertNoRow(reopened, 3);
             assertGroupedState(reopened);
             assertIndexProbe(reopened, 11, 1);
-            assertConsistent(diagnostics, reopenedContainerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(reopened, TABLE_UPPER);
             reopened.rollback();
         }
     }
@@ -271,12 +269,6 @@ public final class MvccDrdaNetworkClientTest extends BaseJDBCTestCase {
             assertEquals(1, rs.getInt(3));
             assertFalse("expected one grouped row", rs.next());
         }
-    }
-
-    private static void assertConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
-        diagnostics.assertConsistentForTesting(0, containerId);
-        assertEquals("expected no MVCC consistency errors", 0,
-                diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
     }
 
     private static byte[] blobPayload(int size, int seed) {

@@ -262,6 +262,30 @@ abstract class MvccSqlTestSupport extends TestCase {
         return DelosStorageDiagnosticsRegistry.mvcc(databasePath(databaseName));
     }
 
+    /** Runs SYSCS_CHECK_TABLE, which checks every index of the table against its base rows. */
+    protected static void assertMvccTableConsistent(Connection connection, String table)
+            throws SQLException {
+        assertRows(connection,
+                "values syscs_util.syscs_check_table(current schema, '" + table + "')",
+                "1");
+    }
+
+    /**
+     * After an in-place compress with no older reader, vacuum has removed all
+     * history, so each live row keeps exactly one stored version.
+     */
+    protected static void assertMvccHistoryPruned(Connection connection, String table)
+            throws Exception {
+        int liveRows;
+        try (Statement statement = connection.createStatement();
+             ResultSet rows = statement.executeQuery("select count(*) from " + table)) {
+            assertTrue(rows.next());
+            liveRows = rows.getInt(1);
+        }
+        assertEquals("in-place compress should leave one stored version per live row of " + table,
+                liveRows, MvccRawStoreMetadataInspection.versions(connection, table).size());
+    }
+
     protected static DelosStorageMaintenanceSnapshot mvccMaintenanceSnapshot(String databaseName) {
         return DelosStorageDiagnosticsRegistry.mvccDatabaseMaintenanceSnapshot(
                 databasePath(databaseName));

@@ -33,7 +33,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /**
  * Reusable SQL-differential gate between the inherited heap provider and the
@@ -49,7 +48,6 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
 
     public void testHeapAndMvccProduceIdenticalResultsForSupportedSqlSurface() throws Exception {
         String databaseName = databaseName("heap-mvcc-differential-sql-harness-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long mvccContainerId;
 
         try (Connection setup = openDatabase(databaseName, true)) {
@@ -87,7 +85,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                     4L, countRows(mvccConnection, MVCC_REFERENCE_TABLE));
 
             mvccContainerId = mvccContainerId(mvccConnection, "MVCC_DIFF_SQL_T");
-            assertMvccConsistent(diagnostics, mvccContainerId);
+            assertMvccTableConsistent(mvccConnection, "MVCC_DIFF_SQL_T");
 
             harness.assertCheckpoint("initial committed fixture");
             assertMvccRuntimeStatisticsAvailable(mvccConnection);
@@ -105,7 +103,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             mvccConnection.commit();
 
             harness.assertCheckpoint("after row rollback to fixture");
-            assertMvccConsistent(diagnostics, mvccContainerId);
+            assertMvccTableConsistent(mvccConnection, "MVCC_DIFF_SQL_T");
 
             Savepoint heapReferenceRollbackPoint =
                     heapConnection.setSavepoint("HEAP_DIFF_SQL_REFERENCE_ROLLBACK_POINT");
@@ -143,14 +141,14 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             harness.assertCheckpoint("after committed indexed updates, delete/reinsert, and overflow rows");
             assertIndexedLookupMatches(heapConnection, HEAP_TABLE, "beta-u", 2);
             assertIndexedLookupMatches(mvccConnection, MVCC_TABLE, "beta-u", 2);
-            assertMvccConsistent(diagnostics, mvccContainerId);
+            assertMvccTableConsistent(mvccConnection, "MVCC_DIFF_SQL_T");
 
             inPlaceCompressTable(heapConnection, "HEAP_DIFF_SQL_T");
             heapConnection.commit();
             inPlaceCompressTable(mvccConnection, "MVCC_DIFF_SQL_T");
             mvccConnection.commit();
             harness.assertCheckpoint("after provider maintenance");
-            assertMvccConsistent(diagnostics, mvccContainerId);
+            assertMvccTableConsistent(mvccConnection, "MVCC_DIFF_SQL_T");
             heapConnection.rollback();
             mvccConnection.rollback();
         }
@@ -168,7 +166,7 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
             reopenedHarness.assertCheckpoint("after shutdown and reopen");
             assertIndexedLookupMatches(reopened, HEAP_TABLE, "beta-u", 2);
             assertIndexedLookupMatches(reopened, MVCC_TABLE, "beta-u", 2);
-            assertMvccConsistent(diagnostics, mvccContainerId(reopened, "MVCC_DIFF_SQL_T"));
+            assertMvccTableConsistent(reopened, "MVCC_DIFF_SQL_T");
         }
     }
 
@@ -266,12 +264,6 @@ public final class HeapMvccDifferentialSqlHarnessTest extends MvccSqlTestSupport
                 assertFalse("expected exactly one indexed lookup row for " + tableName, rs.next());
             }
         }
-    }
-
-    private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
-        diagnostics.assertConsistentForTesting(0, containerId);
-        assertEquals("expected no MVCC consistency errors", 0,
-                diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
     }
 
     private static String repeatedNote(String seed, int length) {

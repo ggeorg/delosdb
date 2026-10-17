@@ -26,13 +26,11 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /** Broad SQL-surface gate for delos_mvcc feature-completeness hardening. */
 public final class MvccSqlFeatureCompletenessTest extends MvccSqlTestSupport {
     public void testPreparedInsertSelectDefaultsAggregatesSavepointsVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-feature-completeness-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long targetContainerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -69,7 +67,7 @@ public final class MvccSqlFeatureCompletenessTest extends MvccSqlTestSupport {
             connection.commit();
 
             targetContainerId = mvccContainerId(connection, "MVCC_FEATURE_TARGET_T");
-            assertMvccConsistent(diagnostics, targetContainerId);
+            assertMvccTableConsistent(connection, "MVCC_FEATURE_TARGET_T");
             assertRows(connection,
                     "select id, category, payload, amount, note from mvcc_feature_target_t order by id",
                     "101|alpha|first-copied|6|one",
@@ -109,20 +107,20 @@ public final class MvccSqlFeatureCompletenessTest extends MvccSqlTestSupport {
                     "select category, count(*), sum(amount) from mvcc_feature_target_t "
                             + "group by category order by category",
                     "alpha|2|35");
-            assertMvccConsistent(diagnostics, targetContainerId);
+            assertMvccTableConsistent(connection, "MVCC_FEATURE_TARGET_T");
 
             inPlaceCompressTable(connection, "MVCC_FEATURE_TARGET_T");
             connection.commit();
-            assertFalse("feature-completeness vacuum should not be skipped",
-                    diagnostics.lastVacuumSkippedForTesting(0, targetContainerId));
-            assertMvccConsistent(diagnostics, targetContainerId);
+            assertMvccHistoryPruned(connection, "MVCC_FEATURE_TARGET_T");
+            assertMvccTableConsistent(connection, "MVCC_FEATURE_TARGET_T");
+            connection.commit();
         }
 
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_FEATURE_TARGET_T");
-            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_FEATURE_TARGET_T");
             assertRows(reopened,
                     "select id, category, payload, amount from mvcc_feature_target_t order by id",
                     "101|alpha|first-copied-u|13",
@@ -152,9 +150,4 @@ public final class MvccSqlFeatureCompletenessTest extends MvccSqlTestSupport {
         }
     }
 
-    private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
-        diagnostics.assertConsistentForTesting(0, containerId);
-        assertEquals("expected no MVCC consistency errors", 0,
-                diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
-    }
 }

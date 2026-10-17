@@ -21,14 +21,12 @@
 package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import junit.framework.Test;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
@@ -73,14 +71,11 @@ public final class HeapMvccDrdaDisconnectCleanupTest extends BaseJDBCTestCase {
         assertAbortRollsBackAndReleases(HEAP_TABLE);
         assertAbortRollsBackAndReleases(MVCC_TABLE);
 
-        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics(
-                getTestConfiguration().getDatabasePath(
-                        getTestConfiguration().getDefaultDatabaseName()));
         try (Connection connection = openDefaultConnection()) {
             connection.setAutoCommit(false);
             long containerId = MvccSqlTestSupport.mvccContainerId(
                     connection, MVCC_TABLE.toUpperCase(java.util.Locale.ROOT));
-            diagnostics.assertConsistentForTesting(0, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, MVCC_TABLE.toUpperCase(java.util.Locale.ROOT));
             connection.rollback();
         }
     }

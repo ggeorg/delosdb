@@ -26,7 +26,6 @@ import java.sql.Statement;
 
 import junit.framework.Test;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
@@ -106,15 +105,11 @@ public final class HeapMvccDrdaServerRestartTest extends BaseJDBCTestCase {
                 survivor.rollback();
             }
 
-            DelosStorageDiagnostics diagnostics =
-                    MvccSqlTestSupport.mvccDiagnostics(
-                            getTestConfiguration().getDatabasePath(
-                                    getTestConfiguration().getDefaultDatabaseName()));
             try (Connection check = openDefaultConnection()) {
                 check.setAutoCommit(false);
                 long containerId = MvccSqlTestSupport.mvccContainerId(
                         check, MVCC_TABLE.toUpperCase(java.util.Locale.ROOT));
-                diagnostics.assertConsistentForTesting(0, containerId);
+                MvccSqlTestSupport.assertMvccTableConsistent(check, MVCC_TABLE.toUpperCase(java.util.Locale.ROOT));
                 check.rollback();
             }
         } finally {

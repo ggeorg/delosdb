@@ -32,13 +32,11 @@ import java.sql.Time;
 import java.sql.Timestamp;
 import java.sql.Types;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /** SQL integration tests for delos_mvcc typed Derby row values. */
 public final class MvccSqlTypeCoverageTest extends MvccSqlTestSupport {
     public void testCommonDerbySqlTypesRoundTripAcrossUpdateRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-type-coverage-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -63,7 +61,7 @@ public final class MvccSqlTypeCoverageTest extends MvccSqlTestSupport {
             connection.commit();
 
             containerId = mvccContainerId(connection, "MVCC_TYPE_T");
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_TYPE_T");
 
             Savepoint savepoint = connection.setSavepoint("TYPE_SP");
             updateTypedRow(connection, typedRowOneRolledBack());
@@ -82,20 +80,20 @@ public final class MvccSqlTypeCoverageTest extends MvccSqlTestSupport {
                     "select id, varchar_val from mvcc_type_t --DERBY-PROPERTIES index=mvcc_type_varchar_idx\n "
                             + "where varchar_val = 'updated-varchar'",
                     "1|updated-varchar");
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_TYPE_T");
 
             inPlaceCompressTable(connection, "MVCC_TYPE_T");
             connection.commit();
-            assertFalse("type coverage vacuum should not be skipped",
-                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccHistoryPruned(connection, "MVCC_TYPE_T");
+            assertMvccTableConsistent(connection, "MVCC_TYPE_T");
+            connection.commit();
         }
 
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_TYPE_T");
-            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_TYPE_T");
             assertTypedRow(reopened, 1, typedRowOneCommitted());
             assertTypedRow(reopened, 2, typedRowTwoWithNulls());
             assertRows(reopened,
@@ -196,7 +194,6 @@ public final class MvccSqlTypeCoverageTest extends MvccSqlTestSupport {
             statement.setLong(parameter, value);
         }
     }
-
 
     private static void bindNullableChar(PreparedStatement statement, int parameter, String value) throws SQLException {
         if (value == null) {
@@ -378,13 +375,6 @@ public final class MvccSqlTypeCoverageTest extends MvccSqlTestSupport {
         } else {
             assertEquals(expected, actual);
         }
-    }
-
-    private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
-        String summary = diagnostics.consistencySummaryForTesting(0, containerId);
-        assertEquals("expected valid durable MVCC state, got " + summary,
-                0, diagnostics.consistencyErrorCountForTesting(0, containerId));
-        diagnostics.assertConsistentForTesting(0, containerId);
     }
 
     private static final class TypedRow {

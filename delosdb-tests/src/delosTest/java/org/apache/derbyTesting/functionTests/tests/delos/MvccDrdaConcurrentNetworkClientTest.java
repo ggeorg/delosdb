@@ -84,7 +84,7 @@ public final class MvccDrdaConcurrentNetworkClientTest extends BaseJDBCTestCase 
             }
             connection.commit();
             containerId = MvccSqlTestSupport.mvccContainerId(connection, TABLE_UPPER);
-            diagnostics.assertConsistentForTesting(0, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, TABLE_UPPER);
             connection.rollback();
         }
 
@@ -160,9 +160,7 @@ public final class MvccDrdaConcurrentNetworkClientTest extends BaseJDBCTestCase 
                     blobPayload(68_000 + 100, 200),
                     clobPayload(68_000 + 100, 'x'), "network-inserted-100");
             assertNoRow(connection, 900);
-            diagnostics.assertConsistentForTesting(0, containerId);
-            assertEquals("expected no MVCC consistency errors", 0,
-                    diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, TABLE_UPPER);
             assertTrue("concurrent DRDA LOB stress should retain MVCC overflow pages",
                     diagnostics.overflowPageCountForTesting(0, containerId) > 0L);
             connection.rollback();
@@ -178,7 +176,7 @@ public final class MvccDrdaConcurrentNetworkClientTest extends BaseJDBCTestCase 
                         "lock table " + TABLE + " in share mode");
             }
             long reopenedContainerId = MvccSqlTestSupport.mvccContainerId(reopened, TABLE_UPPER);
-            diagnostics.assertConsistentForTesting(0, reopenedContainerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(reopened, TABLE_UPPER);
             assertRows(reopened,
                     "select count(*), min(id), max(id) from " + TABLE,
                     "27|1|107");

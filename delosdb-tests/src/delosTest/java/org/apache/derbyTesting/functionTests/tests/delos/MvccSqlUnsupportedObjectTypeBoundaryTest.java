@@ -34,7 +34,6 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestSupport {
     public void testJavaObjectColumnRejectsBeforeCatalogOrDurableMutation() throws Exception {
         String databaseName = databaseName("mvcc-sql-java-object-boundary-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
 
         try (Connection connection = openDatabase(databaseName, true)) {
             connection.setAutoCommit(false);
@@ -57,7 +56,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             connection.commit();
 
             long containerId = mvccContainerId(connection, "MVCC_JAVA_OBJECT_T");
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_JAVA_OBJECT_T");
             assertRows(connection,
                     "select id, name from mvcc_java_object_t order by id",
                     "1|ok");
@@ -68,7 +67,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_JAVA_OBJECT_T");
-            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_JAVA_OBJECT_T");
             assertRows(reopened,
                     "select id, name from mvcc_java_object_t order by id",
                     "1|ok");
@@ -77,7 +76,6 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
     public void testMaterializedBlobAndClobColumnsSurviveRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-lob-minimal-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         byte[] originalBlob = blobPayload(8_000, 11);
         String originalClob = clobPayload(8_000, 'a');
         byte[] updatedBlob = blobPayload(9_000, 71);
@@ -99,7 +97,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             insertLobRow(connection, 1, originalBlob, originalClob, "original");
             connection.commit();
             assertLobRow(connection, 1, originalBlob, originalClob, "original");
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LOB_MINIMAL_T");
 
             Savepoint savepoint = connection.setSavepoint("LOB_SP");
             updateLobRow(connection, 1, deletedBlob, deletedClob, "rolled-back-update");
@@ -115,15 +113,14 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             connection.commit();
             assertLobRow(connection, 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(connection, 2);
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LOB_MINIMAL_T");
 
             inPlaceCompressTable(connection, "MVCC_LOB_MINIMAL_T");
             connection.commit();
-            assertFalse("LOB vacuum should not be skipped",
-                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            assertMvccHistoryPruned(connection, "MVCC_LOB_MINIMAL_T");
             assertLobRow(connection, 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(connection, 2);
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LOB_MINIMAL_T");
             connection.rollback();
         }
 
@@ -131,7 +128,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_LOB_MINIMAL_T");
-            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_LOB_MINIMAL_T");
             assertLobRow(reopened, 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(reopened, 2);
         }
@@ -166,7 +163,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             connection.commit();
             assertLobRow(connection, "mvcc_lob_overflow_t", 1, originalBlob, originalClob, "original");
             assertLobRow(connection, "mvcc_lob_overflow_t", 2, deletedBlob, deletedClob, "delete-me");
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LOB_OVERFLOW_T");
             connection.rollback();
         }
 
@@ -194,7 +191,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
             assertLobRow(connection, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(connection, "mvcc_lob_overflow_t", 2);
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LOB_OVERFLOW_T");
             overflowPagesBeforeVacuum = diagnostics.overflowPageCountForTesting(0, containerId);
             assertTrue("obsolete large LOB versions should leave overflow pages before vacuum; initial="
                             + initialOverflowPages + ", beforeVacuum=" + overflowPagesBeforeVacuum,
@@ -210,12 +207,11 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
 
             assertEquals("in-place compress must keep the MVCC base container stable",
                     containerId, mvccContainerId(connection, "MVCC_LOB_OVERFLOW_T"));
-            assertFalse("large LOB vacuum should not be skipped",
-                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
+            assertMvccHistoryPruned(connection, "MVCC_LOB_OVERFLOW_T");
             assertLobRow(connection, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(connection, "mvcc_lob_overflow_t", 2);
             assertNoLobRow(connection, "mvcc_lob_overflow_t", 3);
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LOB_OVERFLOW_T");
             overflowPagesAfterVacuum = diagnostics.overflowPageCountForTesting(0, containerId);
             assertTrue("vacuum must retain live large LOB overflow chains",
                     overflowPagesAfterVacuum > 0L);
@@ -231,7 +227,7 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_LOB_OVERFLOW_T");
             assertEquals("large LOB overflow page count should remain stable after reopen",
                     overflowPagesAfterVacuum, diagnostics.overflowPageCountForTesting(0, reopenedContainerId));
-            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_LOB_OVERFLOW_T");
             assertLobRow(reopened, "mvcc_lob_overflow_t", 1, updatedBlob, updatedClob, "updated");
             assertNoLobRow(reopened, "mvcc_lob_overflow_t", 2);
             assertNoLobRow(reopened, "mvcc_lob_overflow_t", 3);
@@ -363,9 +359,4 @@ public final class MvccSqlUnsupportedObjectTypeBoundaryTest extends MvccSqlTestS
         return builder.toString();
     }
 
-    private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
-        diagnostics.assertConsistentForTesting(0, containerId);
-        assertEquals("expected no MVCC consistency errors", 0,
-                diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
-    }
 }

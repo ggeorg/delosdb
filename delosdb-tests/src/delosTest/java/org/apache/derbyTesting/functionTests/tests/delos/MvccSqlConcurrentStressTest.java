@@ -37,13 +37,11 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /** SQL stress gate for the explicit MVCC locking refactor. */
 public final class MvccSqlConcurrentStressTest extends MvccSqlTestSupport {
     public void testConcurrentReadersWritersLobsIndexesRollbackVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-concurrent-stress-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         long containerId;
 
         try (Connection connection = openDatabase(databaseName, true)) {
@@ -62,7 +60,7 @@ public final class MvccSqlConcurrentStressTest extends MvccSqlTestSupport {
             }
             connection.commit();
             containerId = mvccContainerId(connection, "MVCC_CONCURRENT_STRESS_T");
-            diagnostics.assertConsistentForTesting(0, containerId);
+            assertMvccTableConsistent(connection, "MVCC_CONCURRENT_STRESS_T");
             connection.rollback();
         }
 
@@ -133,16 +131,14 @@ public final class MvccSqlConcurrentStressTest extends MvccSqlTestSupport {
                     blobPayload(12_000 + 1, 101), clobPayload(12_000 + 1, 'k'), "writer-a-1");
             assertLobRow(connection, 100,
                     blobPayload(9_000 + 100, 200), clobPayload(9_000 + 100, 'x'), "inserted-100");
-            diagnostics.assertConsistentForTesting(0, containerId);
-            assertEquals("expected no MVCC consistency errors", 0,
-                    diagnostics.consistencyDiagnosticsForTesting(0, containerId).errorCount());
+            assertMvccTableConsistent(connection, "MVCC_CONCURRENT_STRESS_T");
         }
 
         shutdownDatabase(databaseName);
 
         try (Connection reopened = openDatabase(databaseName, false)) {
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_CONCURRENT_STRESS_T");
-            diagnostics.assertConsistentForTesting(0, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_CONCURRENT_STRESS_T");
             assertRows(reopened,
                     "select count(*), min(id), max(id) from mvcc_concurrent_stress_t",
                     "34|1|109");

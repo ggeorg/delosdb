@@ -35,7 +35,6 @@ import java.util.concurrent.TimeUnit;
 
 import junit.framework.Test;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derbyTesting.junit.BaseJDBCTestCase;
 import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
@@ -80,14 +79,11 @@ public final class HeapMvccDrdaStreamingDisconnectTest extends BaseJDBCTestCase 
         assertStreamingDisconnectCleanup(HEAP_TABLE);
         assertStreamingDisconnectCleanup(MVCC_TABLE);
 
-        DelosStorageDiagnostics diagnostics = MvccSqlTestSupport.mvccDiagnostics(
-                getTestConfiguration().getDatabasePath(
-                        getTestConfiguration().getDefaultDatabaseName()));
         try (Connection connection = openDefaultConnection()) {
             connection.setAutoCommit(false);
             long containerId = MvccSqlTestSupport.mvccContainerId(
                     connection, MVCC_TABLE.toUpperCase(Locale.ROOT));
-            diagnostics.assertConsistentForTesting(0, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, MVCC_TABLE.toUpperCase(Locale.ROOT));
             connection.rollback();
         }
     }

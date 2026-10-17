@@ -26,13 +26,11 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 
 /** SQL proof for large delos_mvcc row payloads across vacuum and reopen. */
 public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
     public void testLongVarcharSurvivesVacuumAndReopen() throws Exception {
         String databaseName = databaseName("mvcc-sql-long-row-overflow-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
         String largePayload = repeated('x', 16000);
         long containerId;
 
@@ -51,7 +49,7 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
             connection.commit();
 
             assertPayloadRoundTrips(connection, 1, largePayload);
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LONG_ROW_T");
             connection.rollback();
         }
 
@@ -61,7 +59,7 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
             connection.commit();
             assertMvccStorageProvider(connection, "MVCC_LONG_ROW_T");
             assertPayloadRoundTrips(connection, 1, largePayload);
-            assertMvccConsistent(diagnostics, containerId);
+            assertMvccTableConsistent(connection, "MVCC_LONG_ROW_T");
             connection.rollback();
         }
 
@@ -70,16 +68,9 @@ public final class MvccSqlLongRowBoundaryTest extends MvccSqlTestSupport {
         try (Connection reopened = openDatabase(databaseName, false)) {
             assertMvccStorageProvider(reopened, "MVCC_LONG_ROW_T");
             long reopenedContainerId = mvccContainerId(reopened, "MVCC_LONG_ROW_T");
-            assertMvccConsistent(diagnostics, reopenedContainerId);
+            assertMvccTableConsistent(reopened, "MVCC_LONG_ROW_T");
             assertPayloadRoundTrips(reopened, 1, largePayload);
         }
-    }
-
-    private static void assertMvccConsistent(DelosStorageDiagnostics diagnostics, long containerId) {
-        String summary = diagnostics.consistencySummaryForTesting(0, containerId);
-        assertEquals("expected valid durable MVCC state, got " + summary,
-                0, diagnostics.consistencyErrorCountForTesting(0, containerId));
-        diagnostics.assertConsistentForTesting(0, containerId);
     }
 
     private static void insertRow(Connection connection, int id, String payload) throws SQLException {

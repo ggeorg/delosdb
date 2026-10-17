@@ -238,7 +238,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
 
         DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(writer);
         DelosRawStoreIoSnapshot beforeIo = rawStoreSnapshot(provider, database);
-        UpdateWork beforeWork = updateWork(provider, database);
         long walBefore = flushedWalInstant(writer);
         String identity = beforeIo.databaseIdentity();
         RawStoreIoFaultInjectionTestSupport.installRecording(identity,
@@ -248,7 +247,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         long commitNanos;
         long walAfter;
         DelosRawStoreIoSnapshot afterIo;
-        UpdateWork afterWork;
         RawStoreIoFaultInjectionTestSupport.Evidence evidence;
         try {
             long start = System.nanoTime();
@@ -261,7 +259,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             walAfter = flushedWalInstant(writer);
             DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(writer);
             afterIo = rawStoreSnapshot(provider, database);
-            afterWork = updateWork(provider, database);
             evidence = RawStoreIoFaultInjectionTestSupport.evidence(identity);
         } finally {
             RawStoreIoFaultInjectionTestSupport.clear(identity);
@@ -272,7 +269,7 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         UpdateObservation observation = new UpdateObservation(
                 provider, updateCase, false, phase, rows, affected,
                 beforeStructure, afterStructure, writes, walBytes(walBefore, walAfter),
-                updateNanos, commitNanos, afterWork.deltaFrom(beforeWork), List.of(), false);
+                updateNanos, commitNanos, List.of(), false);
         int index = observations.size();
         observations.add(observation);
         writeC3UpdateReports(observations, false);
@@ -583,7 +580,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         // the clean boundary. Reader verification happens after recording ends.
         DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(writer);
         DelosRawStoreIoSnapshot beforeIo = rawStoreSnapshot(provider, database);
-        UpdateWork beforeWork = updateWork(provider, database);
         long walBefore = flushedWalInstant(writer);
         String identity = beforeIo.databaseIdentity();
         RawStoreIoFaultInjectionTestSupport.installRecording(identity,
@@ -593,7 +589,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         long commitNanos;
         long walAfter;
         DelosRawStoreIoSnapshot afterIo;
-        UpdateWork afterWork;
         RawStoreIoFaultInjectionTestSupport.Evidence evidence;
         try {
             long start = System.nanoTime();
@@ -606,7 +601,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             walAfter = flushedWalInstant(writer);
             DelosDeleteReinsertPageTopologyTestSupport.flushPageCache(writer);
             afterIo = rawStoreSnapshot(provider, database);
-            afterWork = updateWork(provider, database);
             evidence = RawStoreIoFaultInjectionTestSupport.evidence(identity);
         } finally {
             RawStoreIoFaultInjectionTestSupport.clear(identity);
@@ -617,7 +611,7 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         UpdateObservation observation = new UpdateObservation(
                 provider, updateCase, reader != null, phase, rows, affected,
                 beforeStructure, afterStructure, writes, walBytes(walBefore, walAfter),
-                updateNanos, commitNanos, afterWork.deltaFrom(beforeWork), List.of(), false);
+                updateNanos, commitNanos, List.of(), false);
         int index = observations.size();
         observations.add(observation);
         // Retain measured costs before semantic/topology assertions. An error
@@ -680,20 +674,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             result.add(new WalOperation(entry.getKey(), values[0], values[1], values[2]));
         }
         return List.copyOf(result);
-    }
-
-    private static UpdateWork updateWork(Provider provider, String database) {
-        if (provider == Provider.HEAP) {
-            // These are MVCC diagnostic counters, not fabricated Heap zeros.
-            return UpdateWork.UNAVAILABLE;
-        }
-        var diagnostics = mvccDiagnostics(database);
-        return new UpdateWork(
-                diagnostics.updateCountForTesting(),
-                diagnostics.scanOpenCountForTesting(),
-                diagnostics.candidateIndexLookupCountForTesting(),
-                diagnostics.candidateIndexRowIdCountForTesting(),
-                diagnostics.rowIdFastPathReadCountForTesting());
     }
 
     private static void assertUpdateTopology(UpdateObservation observation) {
@@ -800,13 +780,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             addUpdate(csv, o, "diagnostic.updateElapsedNanos", o.updateNanos(), "single timed executeUpdate; not throughput evidence");
             addUpdate(csv, o, "diagnostic.commitElapsedNanos", o.commitNanos(), "single timed commit; not throughput evidence");
             addUpdate(csv, o, "semanticAndTopologyVerified", o.verified() ? 1L : 0L, "post-measurement assertions");
-            if (o.work().updates() >= 0L) {
-                addUpdate(csv, o, "mvcc.updateCalls", o.work().updates(), "existing MVCC diagnostic delta");
-                addUpdate(csv, o, "mvcc.scanOpens", o.work().scanOpens(), "existing MVCC diagnostic delta");
-                addUpdate(csv, o, "mvcc.candidateLookups", o.work().candidateLookups(), "existing MVCC diagnostic delta");
-                addUpdate(csv, o, "mvcc.candidateRowIds", o.work().candidateRowIds(), "existing MVCC diagnostic delta");
-                addUpdate(csv, o, "mvcc.rowIdFastPathReads", o.work().rowIdFastPathReads(), "existing MVCC diagnostic delta");
-            }
             for (var role : o.writes().byRole().entrySet()) {
                 addUpdate(csv, o, "pageWrites." + role.getKey().name(), role.getValue().writes(),
                         "RawStore page-write role; C1 CURRENT uses MVCC_METADATA_DIRECTORY");
@@ -1419,23 +1392,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         }
     }
 
-    private record UpdateWork(
-            long updates,
-            long scanOpens,
-            long candidateLookups,
-            long candidateRowIds,
-            long rowIdFastPathReads) {
-        private static final UpdateWork UNAVAILABLE = new UpdateWork(-1L, -1L, -1L, -1L, -1L);
-
-        UpdateWork deltaFrom(UpdateWork before) {
-            return updates < 0L ? UNAVAILABLE : new UpdateWork(
-                    updates - before.updates, scanOpens - before.scanOpens,
-                    candidateLookups - before.candidateLookups,
-                    candidateRowIds - before.candidateRowIds,
-                    rowIdFastPathReads - before.rowIdFastPathReads);
-        }
-    }
-
     private record UpdateObservation(
             Provider provider,
             UpdateCase updateCase,
@@ -1449,7 +1405,6 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
             long walBytes,
             long updateNanos,
             long commitNanos,
-            UpdateWork work,
             List<WalOperation> walOperations,
             boolean verified) {
         UpdateObservation {
@@ -1467,7 +1422,7 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         UpdateObservation withWalOperations(List<WalOperation> operations) {
             return new UpdateObservation(provider, updateCase, heldReader, phase, fixtureRows,
                     affectedRows, before, after, writes, walBytes, updateNanos, commitNanos,
-                    work, operations, verified);
+                    operations, verified);
         }
 
         String readerName() {
@@ -1481,7 +1436,7 @@ public final class MutationPhysicalAmplificationLedgerTest extends MvccSqlTestSu
         UpdateObservation withVerified() {
             return new UpdateObservation(provider, updateCase, heldReader, phase, fixtureRows,
                     affectedRows, before, after, writes, walBytes, updateNanos, commitNanos,
-                    work, walOperations, true);
+                    walOperations, true);
         }
     }
 

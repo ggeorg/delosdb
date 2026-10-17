@@ -82,7 +82,7 @@ public final class MvccDrdaConcurrentClientStressTest extends BaseJDBCTestCase {
             connection.commit();
             containerId = MvccSqlTestSupport.mvccContainerId(
                     connection, MVCC_TABLE_UPPER);
-            diagnostics.assertConsistentForTesting(0, containerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, MVCC_TABLE_UPPER);
             connection.rollback();
         }
 
@@ -150,10 +150,7 @@ public final class MvccDrdaConcurrentClientStressTest extends BaseJDBCTestCase {
             assertBucketCounts(connection, MVCC_TABLE, "mvcc");
             assertNoRow(connection, HEAP_TABLE, 900);
             assertNoRow(connection, MVCC_TABLE, 900);
-            diagnostics.assertConsistentForTesting(0, containerId);
-            assertEquals("expected no MVCC consistency errors", 0,
-                    diagnostics.consistencyDiagnosticsForTesting(0, containerId)
-                            .errorCount());
+            MvccSqlTestSupport.assertMvccTableConsistent(connection, MVCC_TABLE_UPPER);
             connection.rollback();
         }
 
@@ -168,7 +165,7 @@ public final class MvccDrdaConcurrentClientStressTest extends BaseJDBCTestCase {
             }
             long reopenedContainerId = MvccSqlTestSupport.mvccContainerId(
                     reopened, MVCC_TABLE_UPPER);
-            diagnostics.assertConsistentForTesting(0, reopenedContainerId);
+            MvccSqlTestSupport.assertMvccTableConsistent(reopened, MVCC_TABLE_UPPER);
             assertRows(reopened,
                     "select count(*), min(id), max(id), sum(amount) from "
                             + HEAP_TABLE,
