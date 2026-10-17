@@ -23,42 +23,61 @@ package org.apache.derbyTesting.functionTests.tests.delos;
 
 import java.sql.Connection;
 
-import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
-
-/** Stress proof that purge/vacuum preserves history required by a long SQL reader. */
+/**
+ * Stress proof that vacuum preserves the history a long repeatable-read
+ * reader still needs. Background maintenance runs after every committed
+ * change, and an explicit in-place compress adds pressure every third update;
+ * neither may remove the reader's version, and once the reader ends,
+ * background maintenance alone must prune it.
+ */
 public final class MvccSqlLongReaderPurgeStressTest extends MvccSqlTestSupport {
-    private static final String ENABLED_PROPERTY = "delosdb.mvcc.purgeDaemon.enabled";
-    private static final String CHANGED_ROWS_THRESHOLD_PROPERTY = "delosdb.mvcc.purgeDaemon.changedRowsThreshold";
-    private static final String VISIBILITY_DEBT_THRESHOLD_PROPERTY =
-            "delosdb.mvcc.purgeDaemon.visibilityDebtThreshold";
+    private static final String MAINTENANCE_ENABLED_PROPERTY =
+            "delosdb.mvcc.rawStoreMaintenance.enabled";
+    private static final String PERIOD_MILLIS_PROPERTY =
+            "delosdb.mvcc.rawStoreMaintenance.periodMillis";
+    private static final String CHANGED_ROWS_THRESHOLD_PROPERTY =
+            "delosdb.mvcc.rawStoreMaintenance.changedRowsThreshold";
+    private static final String TABLE = "LONG_READER_PURGE_T";
 
     public void testLongRepeatableReadReaderSurvivesAggressivePurgeStress() throws Exception {
         String databaseName = databaseName("mvcc-long-reader-purge-stress-db");
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(databaseName);
-        long containerId;
+        // Maintenance settings are read when the database boots.
+        try (SystemPropertyScope maintenance =
+                     setSystemProperty(MAINTENANCE_ENABLED_PROPERTY, "true");
+             SystemPropertyScope period = setSystemProperty(PERIOD_MILLIS_PROPERTY, "25");
+             SystemPropertyScope changedRowsThreshold =
+                     setSystemProperty(CHANGED_ROWS_THRESHOLD_PROPERTY, "1")) {
+            runWithMaintenance(databaseName);
+        }
+    }
 
+    private static void runWithMaintenance(String databaseName) throws Exception {
+        long containerId;
         try (Connection setup = openDatabase(databaseName, true)) {
             setup.setAutoCommit(false);
             executeUpdate(setup, "create table long_reader_purge_t "
                     + "(id int primary key, payload varchar(32)) using delos_mvcc");
             executeUpdate(setup, "insert into long_reader_purge_t values (1, 'v00')");
             setup.commit();
-            containerId = mvccContainerId(setup, "LONG_READER_PURGE_T");
+            containerId = mvccContainerId(setup, TABLE);
             setup.rollback();
         }
 
-        try (SystemPropertyScope enabled = setSystemProperty(ENABLED_PROPERTY, "true");
-             SystemPropertyScope changedRowsThreshold = setSystemProperty(CHANGED_ROWS_THRESHOLD_PROPERTY, "1");
-             SystemPropertyScope debtThreshold = setSystemProperty(VISIBILITY_DEBT_THRESHOLD_PROPERTY, "1");
-             Connection reader = openDatabase(databaseName, false);
-             Connection writer = openDatabase(databaseName, false)) {
+        assertTrue(mvccMaintenanceSnapshot(databaseName).maintenanceEnabled());
+
+        try (Connection reader = openDatabase(databaseName, false);
+             Connection writer = openDatabase(databaseName, false);
+             Connection inspector = openDatabase(databaseName, false)) {
             reader.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
             reader.setAutoCommit(false);
             writer.setAutoCommit(false);
+            inspector.setAutoCommit(false);
 
             assertRows(reader,
                     "select id, payload from long_reader_purge_t where id = 1",
                     "1|v00");
+            long runsBeforeUpdates = maintenanceTable(
+                    mvccMaintenanceSnapshot(databaseName), containerId).runCount();
 
             int iterations = 12;
             for (int i = 1; i <= iterations; i++) {
@@ -68,7 +87,7 @@ public final class MvccSqlLongReaderPurgeStressTest extends MvccSqlTestSupport {
                 writer.commit();
 
                 if (i % 3 == 0) {
-                    inPlaceCompressTable(writer, "LONG_READER_PURGE_T");
+                    inPlaceCompressTable(writer, TABLE);
                     writer.commit();
                 }
 
@@ -78,17 +97,17 @@ public final class MvccSqlLongReaderPurgeStressTest extends MvccSqlTestSupport {
                 assertRows(writer,
                         "select id, payload from long_reader_purge_t where id = 1",
                         "1|" + value);
-                assertEquals("purge stress must preserve one logical row",
-                        1, diagnostics.logicalRowCountForTesting(0, containerId));
+                assertRows(writer, "select count(*) from long_reader_purge_t", "1");
+                writer.commit();
             }
 
-            assertTrue("aggressive maintenance should leave observable purge/vacuum pressure",
-                    diagnostics.purgeDaemonScheduleCountForTesting(0, containerId) > 0L
-                            || diagnostics.physicalVersionCountForTesting(0, containerId) > 1);
-            assertEquals("automatic purge queue should not leave pending entries after drain",
-                    0L, diagnostics.purgeQueuePendingCountForTesting(0, containerId));
+            // Background maintenance must run against the reader's horizon,
+            // not merely be enabled.
+            waitUntil("background maintenance did not run while the reader was active", () ->
+                    maintenanceTable(mvccMaintenanceSnapshot(databaseName), containerId)
+                            .runCount() > runsBeforeUpdates);
 
-            int versionsWhileReaderActive = diagnostics.physicalVersionCountForTesting(0, containerId);
+            int versionsWhileReaderActive = storedVersions(inspector);
             assertTrue("active long reader must retain at least old-reader and latest versions, got "
                     + versionsWhileReaderActive,
                     versionsWhileReaderActive >= 2);
@@ -98,25 +117,18 @@ public final class MvccSqlLongReaderPurgeStressTest extends MvccSqlTestSupport {
             assertRows(writer,
                     "select id, payload from long_reader_purge_t where id = 1",
                     "1|v12");
+            writer.commit();
 
             reader.rollback();
 
-            inPlaceCompressTable(writer, "LONG_READER_PURGE_T");
-            writer.commit();
-
-            assertFalse("final vacuum should run after the long reader releases its snapshot",
-                    diagnostics.lastVacuumSkippedForTesting(0, containerId));
-            assertTrue("final vacuum should prune history previously protected by the long reader",
-                    diagnostics.lastVacuumRemovedVersionsForTesting(0, containerId) >= 1);
-            assertTrue("final vacuum should reduce physical versions after reader release",
-                    diagnostics.physicalVersionCountForTesting(0, containerId) < versionsWhileReaderActive);
-            assertEquals("final vacuum must preserve one logical row",
-                    1, diagnostics.logicalRowCountForTesting(0, containerId));
-            diagnostics.assertConsistentForTesting(0, containerId);
+            waitUntil("background maintenance did not prune history after the reader ended", () ->
+                    storedVersions(inspector) < versionsWhileReaderActive);
+            assertRows(writer, "select count(*) from long_reader_purge_t", "1");
             assertRows(writer,
                     "select id, payload from long_reader_purge_t where id = 1",
                     "1|v12");
-            writer.rollback();
+            assertTableConsistent(writer);
+            writer.commit();
         }
 
         shutdownDatabase(databaseName);
@@ -125,7 +137,21 @@ public final class MvccSqlLongReaderPurgeStressTest extends MvccSqlTestSupport {
             assertRows(reopened,
                     "select id, payload from long_reader_purge_t where id = 1",
                     "1|v12");
-            diagnostics.assertConsistentForTesting(0, containerId);
+            assertTableConsistent(reopened);
         }
+    }
+
+    private static int storedVersions(Connection inspector) throws Exception {
+        try {
+            return MvccRawStoreMetadataInspection.versions(inspector, TABLE).size();
+        } finally {
+            inspector.commit();
+        }
+    }
+
+    private static void assertTableConsistent(Connection connection) throws Exception {
+        assertRows(connection,
+                "values syscs_util.syscs_check_table('APP', '" + TABLE + "')",
+                "1");
     }
 }
