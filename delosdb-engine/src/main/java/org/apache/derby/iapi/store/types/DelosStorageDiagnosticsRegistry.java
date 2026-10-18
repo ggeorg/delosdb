@@ -50,10 +50,6 @@ public final class DelosStorageDiagnosticsRegistry {
                 DelosStorageDiagnosticsContext.memoryDatabase(databaseName));
     }
 
-    public static DelosDatabaseStorageSnapshot mvccDatabaseStorageSnapshot(Path databaseDirectory) {
-        return mvcc(databaseDirectory).databaseStorageSnapshot();
-    }
-
     public static DelosStorageMaintenanceSnapshot mvccDatabaseMaintenanceSnapshot(
             Path databaseDirectory) {
         return mvcc(databaseDirectory).databaseMaintenanceSnapshot();
@@ -82,16 +78,6 @@ public final class DelosStorageDiagnosticsRegistry {
     public static DelosRawStoreIoSnapshot mvccMemoryDatabaseRawStoreIoSnapshot(
             String databaseName) {
         return mvccMemory(databaseName).databaseRawStoreIoSnapshot();
-    }
-
-    public static List<DelosTableStorageSnapshot> mvccTableStorageSnapshots(
-            Path databaseDirectory) {
-        return mvcc(databaseDirectory).tableStorageSnapshots();
-    }
-
-    public static List<DelosTransactionSnapshot> mvccTransactionSnapshots(
-            Path databaseDirectory) {
-        return mvcc(databaseDirectory).transactionSnapshots();
     }
 
     public static DelosStorageDiagnostics heap() {

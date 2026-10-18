@@ -57,11 +57,6 @@ interface DelosStorageDatabaseDiagnostics {
         return false;
     }
 
-    /** Return a versioned immutable observation for one database runtime. */
-    default DelosDatabaseStorageSnapshot databaseStorageSnapshot() {
-        return DelosDatabaseStorageSnapshot.unavailable(providerId());
-    }
-
     /** Return the immutable database-owned maintenance and reclamation observation. */
     default DelosStorageMaintenanceSnapshot databaseMaintenanceSnapshot() {
         return DelosStorageMaintenanceSnapshot.unavailable(providerId());
@@ -75,20 +70,5 @@ interface DelosStorageDatabaseDiagnostics {
     /** Return database-scoped shared RawStore page-I/O accounting. */
     default DelosRawStoreIoSnapshot databaseRawStoreIoSnapshot() {
         return DelosRawStoreIoSnapshot.unavailable();
-    }
-
-    default List<DelosTableStorageSnapshot> tableStorageSnapshots() {
-        return databaseStorageSnapshot().tableSnapshots();
-    }
-
-    default List<DelosTransactionSnapshot> transactionSnapshots() {
-        return databaseStorageSnapshot().transactionSnapshots();
-    }
-
-    default DelosDatabaseCommitTimingSnapshot databaseCommitTimingSnapshotForTesting() {
-        return DelosDatabaseCommitTimingSnapshot.EMPTY;
-    }
-
-    default void resetDatabaseCommitTimingForTesting() {
     }
 }

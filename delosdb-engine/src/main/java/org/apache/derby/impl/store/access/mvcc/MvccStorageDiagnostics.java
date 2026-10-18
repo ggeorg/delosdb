@@ -24,7 +24,6 @@ package org.apache.derby.impl.store.access.mvcc;
 import java.nio.file.Path;
 
 import org.apache.derby.iapi.store.types.DelosDatabaseMemorySnapshot;
-import org.apache.derby.iapi.store.types.DelosDatabaseStorageSnapshot;
 import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
@@ -108,12 +107,6 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public DelosRawStoreIoSnapshot databaseRawStoreIoSnapshot() {
         return rawStoreRuntime().rawStoreIoSnapshot();
-    }
-
-    @Override
-    public DelosDatabaseStorageSnapshot databaseStorageSnapshot() {
-        throw new IllegalStateException(
-                "Retained delos_mvcc database-storage diagnostics were retired with the external persistence runtime");
     }
 
     @Override

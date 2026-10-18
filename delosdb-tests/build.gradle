@@ -5465,8 +5465,6 @@ registerDelosFocusedTest(
                         'delosdb.v1Baseline.overheadRows').getOrElse('1000'),
                 'delosdb.v1Baseline.overheadQueries': providers.gradleProperty(
                         'delosdb.v1Baseline.overheadQueries').getOrElse('500'),
-                'delosdb.v1Baseline.decisionTransactions': providers.gradleProperty(
-                        'delosdb.v1Baseline.decisionTransactions').getOrElse('32'),
                 'delosdb.v1Baseline.caseTimeoutSeconds': providers.gradleProperty(
                         'delosdb.v1Baseline.caseTimeoutSeconds').getOrElse('180')
         ])
@@ -5587,7 +5585,7 @@ tasks.register('runDelosGeneratedClassProductionAcceptance') {
 
 tasks.register('captureDelosV1Baseline') {
     group = 'benchmark'
-    description = 'Runs and packages the production-closeout v1 baseline, including modular DRDA and split decision/publication timing evidence.'
+    description = 'Runs and packages the production-closeout v1 baseline, including modular DRDA evidence.'
 
     dependsOn tasks.named('runDelosV1BaselineOperationalCapture'),
             tasks.named('runDelosJdbcBenchmarkBaseline'),

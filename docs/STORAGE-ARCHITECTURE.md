@@ -158,9 +158,9 @@ as permanently post-v1.
 against its base rows. Diagnostics are read-only and must not become repair, cleanup, or hidden
 execution-routing mechanisms.
 
-`DelosStorageDiagnosticsRegistry` exposes the measured runtime state: the MVCC maintenance, memory,
-table-storage and transaction snapshots, RawStore I/O counters, page, overflow-page and
-reusable-page counts, and the heap sanity, raw-store boundary and storage checks.
+`DelosStorageDiagnosticsRegistry` exposes the measured runtime state: the MVCC maintenance and
+memory snapshots, RawStore I/O counters, overflow-page and reusable-page counts, and the heap sanity,
+raw-store boundary and storage checks.
 
 ## Protected boundaries
 

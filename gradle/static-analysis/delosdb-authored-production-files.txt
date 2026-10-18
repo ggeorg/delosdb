@@ -76,9 +76,7 @@ delosdb-engine/src/main/java/org/apache/derby/iapi/store/access/conglomerate/Ext
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/access/conglomerate/IndexDefinitionSupport.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/ArchivedUndoPage.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/raw/StoreLockFastPathSupport.java
-delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseCommitTimingSnapshot.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseMemorySnapshot.java
-delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosDatabaseStorageSnapshot.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosHeapDiagnosticsPerformanceReport.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosHeapRawStoreBoundaryDiagnostics.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosHeapSanityDiagnostics.java
@@ -101,8 +99,6 @@ delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosStoragePredi
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosStorageProviderIds.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosStorageSpaceDiagnostics.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosStorageText.java
-delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosTableStorageSnapshot.java
-delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosTransactionSnapshot.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/StoreDataType.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/StoreDataValue.java
 delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/StoreDataValueBase.java

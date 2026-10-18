@@ -42,13 +42,6 @@ public final class MvccRawStoreAuthorityCutoverTest extends MvccSqlTestSupport {
                     mvccDiagnostics(database).databaseMaintenanceSnapshot();
             assertTrue(maintenance.runtimeActive());
 
-            try {
-                mvccDiagnostics(database).databaseStorageSnapshot();
-                fail("Retained database-storage diagnostics must be retired");
-            } catch (IllegalStateException expected) {
-                assertTrue(expected.toString(),
-                        containsMessage(expected, "external persistence runtime"));
-            }
         }
         shutdownDatabase(database);
     }

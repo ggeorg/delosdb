@@ -27,7 +27,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
-import org.apache.derby.iapi.store.types.DelosDatabaseCommitTimingSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -84,15 +83,12 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
 
         BackupMeasurement backupMeasurement = runBackupStallCase(options);
         OverheadMeasurement overheadMeasurement = runDefaultOverheadCase(options);
-        DecisionPublicationMeasurement decisionPublicationMeasurement =
-                runDecisionPublicationCase(options);
 
         String semanticDigest = semanticDigest(
                 writerMeasurements,
                 lifecycleMeasurements,
                 backupMeasurement,
-                overheadMeasurement,
-                decisionPublicationMeasurement);
+                overheadMeasurement);
         writeCsv(options.reportDirectory().resolve("v1-baseline-writer-matrix.csv"), writerMeasurements);
         writeJson(
                 options.reportDirectory().resolve("v1-baseline-operational-results.json"),
@@ -101,7 +97,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                 lifecycleMeasurements,
                 backupMeasurement,
                 overheadMeasurement,
-                decisionPublicationMeasurement,
                 semanticDigest);
         writeSummary(
                 options.reportDirectory().resolve("v1-baseline-summary.txt"),
@@ -110,7 +105,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                 lifecycleMeasurements,
                 backupMeasurement,
                 overheadMeasurement,
-                decisionPublicationMeasurement,
                 semanticDigest);
 
         assertEquals("writer matrix cell count",
@@ -706,84 +700,11 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
         }
     }
 
-    private static DecisionPublicationMeasurement runDecisionPublicationCase(
-            Options options) throws Exception {
-        Path database = options.databaseRoot().resolve("decision-publication").resolve("db");
-        deleteRecursively(database.getParent());
-        Files.createDirectories(database.getParent());
-
-        DelosStorageDiagnostics diagnostics = mvccDiagnostics(
-                database.toAbsolutePath().toString());
-        String digest;
-        DelosDatabaseCommitTimingSnapshot timing;
-        try (Connection connection = DriverManager.getConnection(
-                "jdbc:derby:" + database.toAbsolutePath() + ";create=true")) {
-            connection.setAutoCommit(false);
-            executeUpdate(connection, "create table H (id int primary key, value int not null)");
-            executeUpdate(connection,
-                    "create table M (id int primary key, value int not null) using delos_mvcc");
-            connection.commit();
-            diagnostics.resetDatabaseCommitTimingForTesting();
-
-            for (int transaction = 1; transaction <= options.decisionTransactions(); transaction++) {
-                try (PreparedStatement heap = connection.prepareStatement(
-                        "insert into H values (?, ?)");
-                     PreparedStatement mvcc = connection.prepareStatement(
-                        "insert into M values (?, ?)")) {
-                    heap.setInt(1, transaction);
-                    heap.setInt(2, transaction * 2);
-                    heap.executeUpdate();
-                    mvcc.setInt(1, transaction);
-                    mvcc.setInt(2, transaction * 3);
-                    mvcc.executeUpdate();
-                }
-                connection.commit();
-            }
-
-            timing = diagnostics.databaseCommitTimingSnapshotForTesting();
-            assertEquals("raw decision-force sample count",
-                    options.decisionTransactions(), timing.rawDecisionForceSamples());
-            assertEquals("participant-publication sample count",
-                    options.decisionTransactions(), timing.participantPublicationSamples());
-            assertTrue("raw decision force must record elapsed time",
-                    timing.rawDecisionForceTotalNanos() > 0L);
-            assertTrue("participant publication must record elapsed time",
-                    timing.participantPublicationTotalNanos() > 0L);
-
-            // Keep the validation read outside the measured explicit transaction sequence and
-            // ensure its read transaction completes before try-with-resources closes the connection.
-            connection.setAutoCommit(true);
-
-            List<String> canonical = new ArrayList<>();
-            try (Statement statement = connection.createStatement();
-                 ResultSet rows = statement.executeQuery(
-                         "select h.id, h.value, m.value from H h join M m on h.id = m.id order by h.id")) {
-                while (rows.next()) {
-                    canonical.add(rows.getInt(1) + "|" + rows.getInt(2) + "|" + rows.getInt(3));
-                }
-            }
-            assertEquals("mixed decision row count", options.decisionTransactions(), canonical.size());
-            digest = sha256(canonical);
-        }
-        shutdownDatabase(database.toAbsolutePath().toString());
-
-        return new DecisionPublicationMeasurement(
-                options.decisionTransactions(),
-                timing.rawDecisionForceSamples(),
-                timing.rawDecisionForceAverageNanos(),
-                timing.rawDecisionForceMaxNanos(),
-                timing.participantPublicationSamples(),
-                timing.participantPublicationAverageNanos(),
-                timing.participantPublicationMaxNanos(),
-                digest);
-    }
-
     private static String semanticDigest(
             List<WriterMeasurement> writerMeasurements,
             List<LifecycleMeasurement> lifecycleMeasurements,
             BackupMeasurement backupMeasurement,
-            OverheadMeasurement overheadMeasurement,
-            DecisionPublicationMeasurement decisionPublicationMeasurement) {
+            OverheadMeasurement overheadMeasurement) {
         List<String> canonical = new ArrayList<>();
         writerMeasurements.stream()
                 .sorted(Comparator.comparing(WriterMeasurement::key))
@@ -794,8 +715,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                         + "=" + value.semanticDigest()));
         canonical.add("backup=" + backupMeasurement.semanticDigest());
         canonical.add("overhead=" + overheadMeasurement.semanticDigest());
-        canonical.add("decision-publication="
-                + decisionPublicationMeasurement.semanticDigest());
         return sha256(canonical);
     }
 
@@ -852,7 +771,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
             List<LifecycleMeasurement> lifecycle,
             BackupMeasurement backup,
             OverheadMeasurement overhead,
-            DecisionPublicationMeasurement decisionPublication,
             String semanticDigest) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("{\n")
@@ -872,9 +790,7 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                 .append("    \"writerCounts\": ").append(intArray(options.writerCounts())).append(",\n")
                 .append("    \"transactionsPerWriter\": ").append(options.transactionsPerWriter()).append(",\n")
                 .append("    \"rowsPerTransaction\": ").append(options.rowsPerTransaction()).append(",\n")
-                .append("    \"lifecycleRows\": ").append(options.lifecycleRows()).append(",\n")
-                .append("    \"decisionTransactions\": ")
-                .append(options.decisionTransactions()).append("\n")
+                .append("    \"lifecycleRows\": ").append(options.lifecycleRows()).append("\n")
                 .append("  },\n")
                 .append("  \"semanticDigest\": \"").append(semanticDigest).append("\",\n")
                 .append("  \"writerMatrix\": [\n");
@@ -930,23 +846,7 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                 .append("\"enabledToDisabledRatio\":")
                 .append(String.format(Locale.ROOT, "%.6f", overhead.enabledToDisabledRatio())).append(',')
                 .append("\"failureControls\":\"").append(overhead.failureControls()).append("\",")
-                .append("\"semanticDigest\":\"").append(overhead.semanticDigest()).append("\"},\n")
-                .append("  \"decisionPublication\": {")
-                .append("\"transactions\":").append(decisionPublication.transactions()).append(',')
-                .append("\"rawDecisionForceSamples\":")
-                .append(decisionPublication.rawDecisionForceSamples()).append(',')
-                .append("\"rawDecisionForceAverageNanos\":")
-                .append(decisionPublication.rawDecisionForceAverageNanos()).append(',')
-                .append("\"rawDecisionForceMaxNanos\":")
-                .append(decisionPublication.rawDecisionForceMaxNanos()).append(',')
-                .append("\"participantPublicationSamples\":")
-                .append(decisionPublication.participantPublicationSamples()).append(',')
-                .append("\"participantPublicationAverageNanos\":")
-                .append(decisionPublication.participantPublicationAverageNanos()).append(',')
-                .append("\"participantPublicationMaxNanos\":")
-                .append(decisionPublication.participantPublicationMaxNanos()).append(',')
-                .append("\"semanticDigest\":\"")
-                .append(decisionPublication.semanticDigest()).append("\"}\n")
+                .append("\"semanticDigest\":\"").append(overhead.semanticDigest()).append("\"}\n")
                 .append("}\n");
         Files.writeString(path, out, StandardCharsets.UTF_8);
     }
@@ -958,7 +858,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
             List<LifecycleMeasurement> lifecycle,
             BackupMeasurement backup,
             OverheadMeasurement overhead,
-            DecisionPublicationMeasurement decisionPublication,
             String semanticDigest) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("DelosDB v1 production-closeout baseline capture\n")
@@ -974,14 +873,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                 .append("backup writer max commit nanos: ").append(backup.writerCommitMaxNanos()).append('\n')
                 .append("profiling enabled/disabled ratio: ")
                 .append(String.format(Locale.ROOT, "%.6f", overhead.enabledToDisabledRatio())).append('\n')
-                .append("raw decision-force average nanos: ")
-                .append(decisionPublication.rawDecisionForceAverageNanos()).append('\n')
-                .append("raw decision-force max nanos: ")
-                .append(decisionPublication.rawDecisionForceMaxNanos()).append('\n')
-                .append("participant publication average nanos: ")
-                .append(decisionPublication.participantPublicationAverageNanos()).append('\n')
-                .append("participant publication max nanos: ")
-                .append(decisionPublication.participantPublicationMaxNanos()).append('\n')
                 .append("semantic digest: ").append(semanticDigest).append('\n');
         Files.writeString(path, out, StandardCharsets.UTF_8);
     }
@@ -1070,7 +961,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
             int backupStartAfterCommits,
             int overheadRows,
             int overheadQueries,
-            int decisionTransactions,
             long caseTimeoutSeconds) {
 
         private static String required(String key) {
@@ -1115,7 +1005,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
                     integer(PREFIX + "backupStartAfterCommits", 5),
                     integer(PREFIX + "overheadRows", 1000),
                     integer(PREFIX + "overheadQueries", 500),
-                    integer(PREFIX + "decisionTransactions", 32),
                     longValue(PREFIX + "caseTimeoutSeconds", 180L));
         }
     }
@@ -1186,17 +1075,6 @@ public final class V1BaselineCaptureTest extends MvccSqlTestSupport {
             long profilingEnabledNanos,
             double enabledToDisabledRatio,
             String failureControls,
-            String semanticDigest) {
-    }
-
-    private record DecisionPublicationMeasurement(
-            int transactions,
-            long rawDecisionForceSamples,
-            long rawDecisionForceAverageNanos,
-            long rawDecisionForceMaxNanos,
-            long participantPublicationSamples,
-            long participantPublicationAverageNanos,
-            long participantPublicationMaxNanos,
             String semanticDigest) {
     }
 
