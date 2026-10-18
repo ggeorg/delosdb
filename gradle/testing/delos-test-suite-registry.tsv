@@ -2,6 +2,7 @@
 # class_name	source_path	suite	execution_tier	reason
 # Every entry is active authority; Stage 7 closed with no transitional sources.
 # Removed Stage 7 assertions are recorded in gradle/testing/delos-stage7-test-consolidation.tsv.
+org.apache.derbyTesting.functionTests.tests.delos.BTreePrefixSnapshotReadTest	org/apache/derbyTesting/functionTests/tests/delos/BTreePrefixSnapshotReadTest.java	functional	full	B-tree partial-key reads from a cached leaf snapshot match the latched scan, see committed changes and keep MVCC snapshot visibility
 org.apache.derbyTesting.functionTests.tests.delos.ContainerCacheFastPinTest	org/apache/derbyTesting/functionTests/tests/delos/ContainerCacheFastPinTest.java	concurrency	full	Gate 6H stable ContainerCache fast-pin lifecycle proof
 org.apache.derbyTesting.functionTests.tests.delos.ContainerIntentSharedFastPathTest	org/apache/derbyTesting/functionTests/tests/delos/ContainerIntentSharedFastPathTest.java	concurrency	full	Gate 6D concurrent compatible container-intent shared lock proof
 org.apache.derbyTesting.functionTests.tests.delos.DelosDdlCrashAtomicityTest	org/apache/derbyTesting/functionTests/tests/delos/DelosDdlCrashAtomicityTest.java	recovery	full	Stage 6 MariaDB-derived supported-DDL crash atomicity proof

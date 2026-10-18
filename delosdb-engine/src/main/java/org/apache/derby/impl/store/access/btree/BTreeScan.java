@@ -21,6 +21,7 @@
 
 package org.apache.derby.impl.store.access.btree;
 
+import java.util.concurrent.atomic.LongAdder;
 import org.apache.derby.shared.common.reference.SQLState;
 
 import org.apache.derby.shared.common.sanity.SanityManager;
@@ -75,6 +76,10 @@ import java.util.Arrays;
 
 public abstract class BTreeScan extends OpenBTree implements ScanManager
 {
+    // Prefix reads answered from a cached leaf snapshot, for tests that must
+    // prove the unlatched path ran.
+    private static final LongAdder SNAPSHOT_PREFIX_HITS = new LongAdder();
+
 
     /*
     ** Fields of BTreeScan
@@ -1440,9 +1445,14 @@ public abstract class BTreeScan extends OpenBTree implements ScanManager
         if (hit == null) {
             return -1;
         }
+        SNAPSHOT_PREFIX_HITS.increment();
         snapshotPrefixHit = hit;
         snapshotPrefixIndex = 0;
         return copyNextSnapshotPrefixRow(row);
+    }
+
+    static long snapshotPrefixHitsForTesting() {
+        return SNAPSHOT_PREFIX_HITS.sum();
     }
 
     final int continueSnapshotPrefixRead(StoreDataValue[] row)
