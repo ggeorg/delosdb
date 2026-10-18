@@ -26,7 +26,7 @@ def requiredCases = [
 ] as Set<String>
 
 def requiredCategoryCounts = [
-        'snapshot-stability': 7,
+        'snapshot-stability': 8,
         'savepoint-rollback': 4,
         'serializable-uniqueness': 1,
         'deadlock': 5,
