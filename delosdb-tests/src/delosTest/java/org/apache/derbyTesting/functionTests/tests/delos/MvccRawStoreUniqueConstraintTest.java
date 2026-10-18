@@ -222,8 +222,8 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
                     }
                 });
                 assertTrue(started.await(5, TimeUnit.SECONDS));
-                Thread.sleep(250L);
-                assertFalse("second writer should wait for the transaction-duration unique-key lock", duplicate.isDone());
+                assertBlockedOnLock(first, duplicate,
+                        "second writer should wait for the transaction-duration unique-key lock");
                 first.commit();
                 assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
                 second.rollback();
@@ -240,8 +240,8 @@ public final class MvccRawStoreUniqueConstraintTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                Thread.sleep(250L);
-                assertFalse(afterRollback.isDone());
+                assertBlockedOnLock(first, afterRollback,
+                        "a writer of a key inserted by an open transaction should wait for it");
                 first.rollback();
                 assertEquals("SUCCESS", afterRollback.get(15, TimeUnit.SECONDS));
             } finally {

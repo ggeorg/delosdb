@@ -308,6 +308,25 @@ abstract class MvccSqlTestSupport extends TestCase {
     }
 
     /**
+     * Asserts that background work is blocked on a lock: the lock table shows
+     * a waiting request and the work has not finished. The observer may be the
+     * connection holding the lock, since reading the lock table takes no
+     * conflicting lock.
+     */
+    protected static void assertBlockedOnLock(
+            Connection observer, java.util.concurrent.Future<?> work, String message)
+            throws Exception {
+        waitUntil(message + ": no lock request is waiting", () -> {
+            try (Statement statement = observer.createStatement();
+                 ResultSet waits = statement.executeQuery(
+                         "select count(*) from syscs_diag.lock_table where state = 'WAIT'")) {
+                return waits.next() && waits.getInt(1) > 0;
+            }
+        });
+        assertFalse(message, work.isDone());
+    }
+
+    /**
      * Polls a condition that background work makes true, failing after twenty
      * seconds with the last exception the condition threw.
      */

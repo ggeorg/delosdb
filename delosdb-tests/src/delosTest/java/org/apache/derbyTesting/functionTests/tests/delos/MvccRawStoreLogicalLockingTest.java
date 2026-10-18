@@ -68,7 +68,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                     }
                 });
                 assertTrue(started.await(5, TimeUnit.SECONDS));
-                assertStillWaiting(readCommittedWriter,
+                assertBlockedOnLock(observer, readCommittedWriter,
                         "READ COMMITTED same-row writer must wait for the stable-row lock");
                 first.commit();
                 assertEquals("SUCCESS", readCommittedWriter.get(15, TimeUnit.SECONDS));
@@ -88,7 +88,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                assertStillWaiting(noLongerQualifies,
+                assertBlockedOnLock(observer, noLongerQualifies,
                         "READ COMMITTED writer must wait before re-qualifying the row");
                 first.commit();
                 assertEquals("COUNT=0", noLongerQualifies.get(15, TimeUnit.SECONDS));
@@ -107,7 +107,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                assertStillWaiting(repeatedReadCommittedWriter,
+                assertBlockedOnLock(observer, repeatedReadCommittedWriter,
                         "READ COMMITTED repeated writer must wait for the stable-row lock");
                 first.commit();
                 assertEquals("SUCCESS", repeatedReadCommittedWriter.get(15, TimeUnit.SECONDS));
@@ -126,7 +126,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return expected.getSQLState();
                     }
                 });
-                assertStillWaiting(staleWriter,
+                assertBlockedOnLock(observer, staleWriter,
                         "REPEATABLE READ same-row writer must wait for the stable-row lock");
                 first.commit();
                 assertEquals("40001", staleWriter.get(15, TimeUnit.SECONDS));
@@ -169,7 +169,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return expected.getSQLState();
                     }
                 });
-                assertStillWaiting(duplicateAfterCommit,
+                assertBlockedOnLock(observer, duplicateAfterCommit,
                         "duplicate writer must wait for the transaction-duration key lock");
                 first.commit();
                 assertEquals("23505", duplicateAfterCommit.get(15, TimeUnit.SECONDS));
@@ -194,7 +194,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                assertStillWaiting(afterSavepoint,
+                assertBlockedOnLock(observer, afterSavepoint,
                         "savepoint rollback must not release transaction-duration key locks");
                 first.commit();
                 assertEquals("SUCCESS", afterSavepoint.get(15, TimeUnit.SECONDS));
@@ -243,7 +243,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return expected.getSQLState();
                     }
                 });
-                assertStillWaiting(duplicate,
+                assertBlockedOnLock(first, duplicate,
                         "same-key reinsert must retain its transaction-duration unique-key lock");
                 first.commit();
                 assertEquals("23505", duplicate.get(15, TimeUnit.SECONDS));
@@ -284,7 +284,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                assertStillWaiting(addConstraint,
+                assertBlockedOnLock(observer, addConstraint,
                         "unique DDL must wait for active shared table-schema locks");
                 dml.commit();
                 assertEquals("SUCCESS", addConstraint.get(20, TimeUnit.SECONDS));
@@ -302,7 +302,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                assertStillWaiting(blockedDml,
+                assertBlockedOnLock(observer, blockedDml,
                         "DML must wait for active exclusive table-schema locks");
                 ddl.rollback();
                 assertEquals("SUCCESS", blockedDml.get(20, TimeUnit.SECONDS));
@@ -346,7 +346,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return failure.getSQLState();
                     }
                 });
-                assertStillWaiting(afterClose,
+                assertBlockedOnLock(holder, afterClose,
                         "transaction abort must be the logical-lock release boundary");
                 holder.rollback();
                 holder.close();
@@ -446,7 +446,7 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
                         return expected.getSQLState();
                     }
                 });
-                assertStillWaiting(waiter,
+                assertBlockedOnLock(observer, waiter,
                         "memory database writers must use the same logical lock manager");
                 first.rollback();
                 assertEquals("SUCCESS", waiter.get(15, TimeUnit.SECONDS));
@@ -486,11 +486,6 @@ public final class MvccRawStoreLogicalLockingTest extends MvccSqlTestSupport {
             }
         }
         return locks;
-    }
-
-    private static void assertStillWaiting(Future<?> future, String message) throws Exception {
-        Thread.sleep(300L);
-        assertFalse(message, future.isDone());
     }
 
     private static void shutdownMemoryDatabase(String databaseName) throws Exception {
