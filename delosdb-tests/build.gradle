@@ -23496,7 +23496,7 @@ tasks.register('runDelosGen2C3F07Embedded8cJfrDiagnostic', JavaExec) {
 registerDelosFocusedTest(
         'runDelosF08BenchmarkContract',
         'Executes authoritative F08 benchmark-mode contracts before expensive benchmark matrices.',
-        ['org/apache/derbyTesting/functionTests/tests/delos/F08BenchmarkContractTest.class'])
+        ['io/github/ggeorg/delosdb/benchmark/jdbc/F08BenchmarkContractTest.class'])
 
 def delosPostModernizationMutationRoot =
         'reports/delosdb/benchmarks/post-modernization-checkpoint/mutations'

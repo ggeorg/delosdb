@@ -14,10 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.derbyTesting.functionTests.tests.delos;
+package io.github.ggeorg.delosdb.benchmark.jdbc;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -133,21 +131,8 @@ public final class F08BenchmarkContractTest extends TestCase {
         }
     }
 
-    private static void validate() throws Exception {
-        Class<?> options = Class.forName(
-                "io.github.ggeorg.delosdb.benchmark.jdbc.DelosJdbcCrossEngineConcurrency$Options");
-        Method read = options.getDeclaredMethod("fromSystemProperties");
-        Method validate = options.getDeclaredMethod("validate");
-        read.setAccessible(true);
-        validate.setAccessible(true);
-        try {
-            validate.invoke(read.invoke(null));
-        } catch (InvocationTargetException failure) {
-            if (failure.getCause() instanceof Exception cause) {
-                throw cause;
-            }
-            throw failure;
-        }
+    private static void validate() {
+        BenchmarkConfiguration.fromSystemProperties().validate();
     }
 
     private static void set(String key, String value) {
