@@ -479,9 +479,6 @@ delosdb-server/src/main/java/org/apache/derby/impl/drda/ReEncodedInputStream.jav
 delosdb-server/src/main/java/org/apache/derby/impl/drda/Session.java
 delosdb-server/src/main/java/org/apache/derby/impl/drda/memCheck.java
 delosdb-spi/src/main/java/module-info.java
-delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/EmptyDictionary.java
-delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/NoOpTransaction.java
-delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/StorelessDatabase.java
 delosdb-tools/src/main/java/module-info.java
 delosdb-tools/src/main/java/org/apache/derby/iapi/tools/i18n/LocalizedResource.java
 delosdb-tools/src/main/java/org/apache/derby/impl/tools/ij/AttributeHolder.java

@@ -15,7 +15,6 @@ delosdb-optionaltools
 delosdb-server
 delosdb-tests
 delosdb-pptesting
-delosdb-storeless
 delosdb-demos
 delosdb-locales
 delosdb-buildtools
@@ -31,6 +30,7 @@ delosdb-storage-mvcc
 delosdb-storage-derby
 delosdb-derby-store-api
 delosdb-runtime-api
+delosdb-storeless
 
 [retired-artifacts]
 delosdb-storage-api.jar

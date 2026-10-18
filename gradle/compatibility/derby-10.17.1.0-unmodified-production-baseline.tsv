@@ -1207,7 +1207,6 @@ ca61fca0e10deb96e5be9190139368271a0d11d1e316d08732326ea9a261c8ea	delosdb-engine/
 259cbde837f0e45e59f868078cab438c65eb97385d2e4e294598ed8b44cbd277	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreIndexedReadMetrics.java
 4141d078433cf91abdf47053cabf66e2d2b724e1196b6e4e3e83f1391e45943f	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccRawStoreOrderedIndexPredicate.java
 4d3a539bb675ca690104a2edceb96d212f74f24e199bf97bc81ba7be4e393d30	delosdb-engine/src/main/java/org/apache/derby/impl/store/access/mvcc/MvccSnapshotLeaseDiagnostics.java
-c7bf13aed50b26c4b4308897e37d2ef6c7956844dd4bb21bfe1c26c610894913	delosdb-storeless/src/main/java/org/apache/derby/impl/storeless/StorelessService.java
 22c9207af459325ddbfbfeda780b886f2a97d4079d2549440698edbb90e69137	delosdb-tools/src/main/java/org/apache/derby/iapi/tools/ToolUtils.java
 1b75ef2a0857a4bc583f62ee12e75a4dd6420c3c5f2a7efe7bcd2519d5adefc6	delosdb-tools/src/main/java/org/apache/derby/iapi/tools/i18n/LocalizedInput.java
 a91607c6cf355492610b9c6e1b425971154781811e1a200928cb1fc45cf50656	delosdb-tools/src/main/java/org/apache/derby/iapi/tools/i18n/LocalizedOutput.java

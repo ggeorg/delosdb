@@ -22,7 +22,6 @@ delosdb-optionaltools
 delosdb-server
 delosdb-tests
 delosdb-pptesting
-delosdb-storeless
 delosdb-demos
 delosdb-locales
 delosdb-buildtools
@@ -38,6 +37,7 @@ delosdb-storage-mvcc
 delosdb-storage-derby
 delosdb-derby-store-api
 delosdb-runtime-api
+delosdb-storeless
 ```
 
 `delosdb-storage-mvcc`, `delosdb-storage-derby`, `delosdb-derby-store-api` and `delosdb-runtime-api`
@@ -46,6 +46,16 @@ were merged into `delosdb-engine`, keeping their packages (`impl.store.access.mv
 `iapi.xml` and `iapi.services.*`), by the engine build consolidation in
 `docs/design/REFERENCE-CODEBASE-STRUCTURE.md`. The engine module exports the kernel contracts as
 Derby's does; the module `io.github.ggeorg.delosdb.runtime.api` no longer exists.
+
+`delosdb-storeless` was Derby's `java/storeless` prototype (`StorelessService`,
+`StorelessDatabase`, `NoOpTransaction`, `EmptyDictionary`), which boots compiler and optimizer
+services without a physical store; DelosDB carried it with small adaptations. It was retired because
+nothing exercised it: the build only compiled it, and the smoke checks its README named no longer
+existed. A review reported that it does not boot normally, and that with statement caching disabled
+a simple query runs but statement cleanup then breaks the connection; upstream Derby compiles the same
+code. `EngineType.STORELESS_ENGINE` stays, as part of Derby's inherited module-boot protocol.
+Restoring the prototype means taking it from Derby 10.17.1.0 or from git history, and adding a test
+that boots it.
 
 ## Ownership rules
 
@@ -123,8 +133,7 @@ these APIs.
 
 The narrow shared contracts between Derby access/transaction code, the RawStore implementation, and
 access-method providers. They are a source-ownership boundary, not a public DelosDB storage API: the
-package-boundary check lets them use nothing else in the engine, and `delosdb-storeless` implements
-them as a no-op store.
+package-boundary check lets them use nothing else in the engine.
 
 ### RawStore and heap (`delosdb-engine`, `impl.store` except `access.mvcc`)
 

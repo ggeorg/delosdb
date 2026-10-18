@@ -88,7 +88,7 @@ public final class DelosHeapDerbyStaticCompatibilityContract {
         List<String> requiredPeers = List.of(
                 "DERBY-MOD-001", "DERBY-MOD-002", "DERBY-MOD-003", "DERBY-MOD-004",
                 "DERBY-MOD-005", "DERBY-MOD-006", "DERBY-MOD-007", "DERBY-MOD-008",
-                "DERBY-MOD-009", "DERBY-MOD-010", "DERBY-MOD-011", "DERBY-MOD-012",
+                "DERBY-MOD-009", "DERBY-MOD-011", "DERBY-MOD-012",
                 "DERBY-MOD-013", "DERBY-MOD-014");
         Map<String, String> parity = loadModuleParity(moduleParity);
         for (String id : requiredPeers) {
