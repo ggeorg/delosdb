@@ -832,6 +832,19 @@ final class ConcurrentLockSet implements LockTable {
         return granted;
     }
 
+    /**
+     * Under the entry mutex. An unlock that waited for the mutex while another
+     * reader promoted this entry still holds its RS2 lock in the promoted fast
+     * control, so it releases there instead of freezing the control. The
+     * caller checks for dormancy after releasing the mutex, because retiring a
+     * dormant control takes the mutex.
+     */
+    private static boolean releasesThrough(
+            FastRecordReadControl fastControl, Latch item, int unlockCount) {
+        return isFastRecordReadRequest(item.getLockable(), item.getQualifier())
+                && fastControl.tryRelease(item, unlockCount) >= 0;
+    }
+
     private boolean tryFastRecordReadUnlock(Entry entry, Latch item, int unlockCount) {
         if (entry == null
                 || !isFastRecordReadRequest(item.getLockable(), item.getQualifier())) {
@@ -1526,14 +1539,23 @@ forever:	for (;;) {
                 || tryFastRecordReadUnlock(entry, item, unlockCount)) {
             return;
         }
+        FastRecordReadControl released = null;
         entry.lock();
         try {
             if (entry.control instanceof FastRecordReadControl) {
-                entry.control = ((FastRecordReadControl) entry.control).freeze();
+                FastRecordReadControl fastControl = (FastRecordReadControl) entry.control;
+                if (releasesThrough(fastControl, item, unlockCount)) {
+                    released = fastControl;
+                    return;
+                }
+                entry.control = fastControl.freeze();
             }
             unlock(entry, item, unlockCount);
         } finally {
             entry.unlock();
+            if (released != null) {
+                released.retainOrRetireIfDormant();
+            }
         }
     }
 
@@ -1661,11 +1683,22 @@ forever:	for (;;) {
             }
         }
 
+        FastRecordReadControl released = null;
         entry.lock();
         try {
             Control control = entry.control;
             if (control instanceof FastRecordReadControl) {
-                control = ((FastRecordReadControl) control).freeze();
+                FastRecordReadControl fastControl = (FastRecordReadControl) control;
+                if (isFastRecordReadRequest(ref, qualifier)) {
+                    Lock key = new Lock(space, ref, qualifier);
+                    Lock lockInGroup = (Lock) group.get(key);
+                    if (lockInGroup != null && releasesThrough(fastControl, lockInGroup, 1)) {
+                        group.remove(key);
+                        released = fastControl;
+                        return lockInGroup;
+                    }
+                }
+                control = fastControl.freeze();
                 entry.control = control;
             }
             if (control == null) {
@@ -1686,6 +1719,9 @@ forever:	for (;;) {
 
         } finally {
             entry.unlock();
+            if (released != null) {
+                released.retainOrRetireIfDormant();
+            }
         }
     }
 

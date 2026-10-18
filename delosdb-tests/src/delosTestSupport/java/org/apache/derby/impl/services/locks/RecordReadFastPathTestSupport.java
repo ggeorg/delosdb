@@ -199,6 +199,15 @@ public final class RecordReadFastPathTestSupport {
                     "adaptive RecordId fast path did not enter: promotions="
                             + promotionsBeforeReuse + " acquireHits=" + hitsBeforeReuse);
         }
+        // Every request here is a compatible RS2 lock, so nothing may freeze
+        // the fast control back into an ordinary LockControl.
+        long freezes = hotStateMetric(
+                ConcurrentLockSet.snapshotHotStateDiagnosticsForTesting(),
+                "FastRecordReadControl", "freezes");
+        if (freezes != 0L) {
+            throw new AssertionError(
+                    "compatible RS2 readers froze the RecordId fast control " + freezes + " times");
+        }
 
         for (int i = 0; i < 10_000; i++) {
             CompatibilitySpace reader = spaces[i & (threads - 1)];
