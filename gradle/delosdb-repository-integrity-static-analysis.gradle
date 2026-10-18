@@ -27,6 +27,12 @@ final File riBroadCatchClassificationFile = new File(
 final File riDuplicateClassificationFile = new File(
         riRoot,
         'gradle/static-analysis/delosdb-exact-duplicate-classification.tsv')
+final File riEnginePropertiesFile = new File(
+        riRoot,
+        'gradle/static-analysis/delosdb-engine-properties.tsv')
+final File riTestRegistryFile = new File(
+        riRoot,
+        'gradle/testing/delos-test-suite-registry.tsv')
 final Object riBuildToolsClasses = project(':delosdb-buildtools')
         .layout.buildDirectory.dir('classes/build-tools')
 
@@ -96,6 +102,11 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
     inputs.file(riSummaryFile)
     inputs.file(riCatchInventoryFile)
     inputs.file(riDuplicateInventoryFile)
+    inputs.file(riEnginePropertiesFile)
+    inputs.file(riTestRegistryFile)
+    inputs.files(rootProject.fileTree('delosdb-engine/src/main/java') {
+        include '**/*.java'
+    })
     outputs.file(riStaticReport)
 
     doLast {
@@ -332,6 +343,63 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
                     ' but baseline requires ' + expectedDuplicateGroups)
         }
 
+        // Every delosdb.* name the engine reads must be classified, every
+        // classified name must still be read, and every supported name must be
+        // proven by registered tests.
+        Set<String> engineProperties = new TreeSet<String>()
+        rootProject.fileTree('delosdb-engine/src/main/java') {
+            include '**/*.java'
+        }.each { File source ->
+            (source.getText('UTF-8') =~ /"(delosdb\.[A-Za-z0-9_.]+)"/).each { match ->
+                engineProperties.add(match[1])
+            }
+        }
+        Set<String> registeredTests = new HashSet<String>()
+        riTestRegistryFile.eachLine('UTF-8') { String line ->
+            if (!line.isBlank() && !line.startsWith('#') && line.contains('\t')) {
+                String className = line.split('\t', -1)[0]
+                registeredTests.add(className.substring(className.lastIndexOf('.') + 1))
+            }
+        }
+        Set<String> propertyCategories = [
+                'SUPPORTED_DEFAULT', 'SUPPORTED_SETTING', 'EXPERIMENT',
+                'DIAGNOSTIC', 'TEST_HOOK', 'INTERNAL'] as Set<String>
+        Map<String, String> classifiedProperties = new TreeMap<String, String>()
+        if (!riEnginePropertiesFile.isFile()) {
+            failures.add('Engine property classification is missing')
+        } else {
+            riEnginePropertiesFile.eachLine('UTF-8') { String line ->
+                if (line.isBlank() || line.startsWith('#') || line.startsWith('property\t')) {
+                    return
+                }
+                String[] columns = line.split('\t', -1)
+                if (columns.length != 5 || !propertyCategories.contains(columns[1])) {
+                    failures.add('Invalid engine property classification row: ' + line)
+                    return
+                }
+                if (classifiedProperties.put(columns[0], columns[1]) != null) {
+                    failures.add('Duplicate engine property classification: ' + columns[0])
+                }
+                if (columns[1].startsWith('SUPPORTED_')) {
+                    List<String> proofs = columns[3] == '-'
+                            ? [] : columns[3].split(';') as List<String>
+                    if (proofs.isEmpty()) {
+                        failures.add('Supported engine property has no proof test: ' + columns[0])
+                    }
+                    proofs.findAll { !registeredTests.contains(it) }.each {
+                        failures.add('Engine property proof is not a registered test: ' +
+                                columns[0] + ' -> ' + it)
+                    }
+                }
+            }
+            (engineProperties - classifiedProperties.keySet()).each {
+                failures.add('Engine reads an unclassified property: ' + it)
+            }
+            (classifiedProperties.keySet() - engineProperties).each {
+                failures.add('Classified engine property is no longer read: ' + it)
+            }
+        }
+
         File report = riStaticReport
         report.parentFile.mkdirs()
         report.withPrintWriter('UTF-8') { writer ->
@@ -391,6 +459,8 @@ tasks.register('delosRepositoryIntegrityStaticAnalysis') {
             writer.println('Compiler compromise candidates: ' +
                     actual.getProperty(
                             'compilerAuthorityCompromiseCandidates'))
+            writer.println('Engine properties classified: ' + classifiedProperties.size() + ' ' +
+                    classifiedProperties.values().countBy { it }.sort())
             writer.println(failures.isEmpty() ? 'Status: PASS' : 'Status: FAIL')
             failures.each { String failure -> writer.println('- ' + failure) }
         }

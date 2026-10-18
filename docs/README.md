@@ -41,6 +41,7 @@ manifests.
 | [`MVCC-DATABASE-RUNTIME.md`](MVCC-DATABASE-RUNTIME.md) | database-scoped MVCC runtime ownership |
 | [`MVCC-DURABILITY-PROTOCOL.md`](MVCC-DURABILITY-PROTOCOL.md) | transaction decision, failure, and recovery authority |
 | [`MVCC-MAINTENANCE.md`](MVCC-MAINTENANCE.md) | database-owned vacuum and maintenance |
+| [`MVCC-PROFILES.md`](MVCC-PROFILES.md) | supported MVCC configurations, their proofs, and experiments |
 | [`MVCC-VISIBILITY-ALGORITHMS.md`](MVCC-VISIBILITY-ALGORITHMS.md) | snapshots and version visibility |
 
 ## Evidence and research

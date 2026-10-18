@@ -1,0 +1,67 @@
+# DelosDB engine system properties: every delosdb.* name the engine reads.
+# Checked by delosRepositoryIntegrityStaticAnalysis: the engine may read only names listed here,
+# every name listed must still be read, and every proof must be a registered test.
+# Profiles built from these classes are described in docs/MVCC-PROFILES.md.
+#
+# category values:
+#   SUPPORTED_DEFAULT  on in every supported profile; changing it is unsupported
+#   SUPPORTED_SETTING  may be changed in a supported profile
+#   EXPERIMENT         off by default and unsupported in any combination
+#   DIAGNOSTIC         observation only; off by default
+#   TEST_HOOK          used by tests to inject faults
+#   INTERNAL           written and read by the engine itself
+property	category	default	proofs	notes
+delosdb.btree.insertRootRoutingSnapshot.disabled	SUPPORTED_DEFAULT	false	InsertRootRoutingSnapshotTest	true (latched root descent) is not tested
+delosdb.diagnostic.btreePointReadPath	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.cacheEntry	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.heapPageReadImage	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.hotState	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.lockEntry	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.lockWait	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.mvccSnapshotLease	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.mvccTransactionStatusCommit	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.pageLatch	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.rawStoreOccupancy.enabled	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.rawStoreOccupancy.report	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.rawStoreOccupancy.sampleEvery	DIAGNOSTIC	false	-	-
+delosdb.diagnostic.rawStorePreparedInsert	DIAGNOSTIC	false	-	-
+delosdb.experimental.btreeInsertBranchRoutingSnapshot.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.fastRecordReadLock	EXPERIMENT	false	-	-
+delosdb.experimental.fastRecordReadLock.retainedSlots	EXPERIMENT	4096	-	tunes the fastRecordReadLock experiment
+delosdb.experimental.heapPageReadImage	EXPERIMENT	false	-	-
+delosdb.experimental.mvccBaseFetchPagePrefetch	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2A1.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2B.pk.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2C1.history.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2C2.archivedUndo.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2CommitStampBatch.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2CommitStampWalBatch.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2FastCurrentVisibilityFetch.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2LazyCurrentCreatorFetch.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2LazyCurrentIdentityFetch.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2ProjectedCurrentRead.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2ReusableCurrentScanTemplate.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2SinglePassCurrentScan.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2SkipCurrentTagFetch.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2StreamingBulkScan.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccGen2TransactionStatusVisibility.enabled	EXPERIMENT	false	-	-
+delosdb.experimental.mvccPhysicalRowLocationCost.enabled	SUPPORTED_DEFAULT	true	MvccCardinalityCostAuthorityTest	named experimental but on by default; false is not tested
+delosdb.experimental.mvccPhysicalScanCost.enabled	SUPPORTED_DEFAULT	true	MvccCardinalityCostAuthorityTest	named experimental but on by default; false is not tested
+delosdb.experimental.rawStorePreparedInsert.enabled	EXPERIMENT	false	-	-
+delosdb.locks.heldIntentRegrant.disabled	SUPPORTED_DEFAULT	false	HeldIntentRegrantTest	true is not tested
+delosdb.memory.maxBytes	SUPPORTED_SETTING	268435456	MvccRawStoreMemoryDatabaseTest	limit for in-memory databases
+delosdb.mvcc.currentRowReadCache.slots	SUPPORTED_SETTING	4096	MvccCurrentRowArchitectureBoundedCacheTest	boot rejects invalid values
+delosdb.mvcc.rawStore.databaseMetadataContainerId	INTERNAL	-	-	stored in each database's properties by the engine, not set by users
+delosdb.mvcc.rawStoreCommitSequenceReservationBlockSize	SUPPORTED_DEFAULT	64	MvccRawStoreDecisionWalCrashTest	boot rejects invalid values; only the default is tested
+delosdb.mvcc.rawStoreConcurrentCommitPublication	SUPPORTED_DEFAULT	true	MvccRawStoreDecisionWalCrashTest;DelosIsolationSpecificationTest	false (serialized publication) is not tested
+delosdb.mvcc.rawStoreMaintenance.changedRowsThreshold	SUPPORTED_SETTING	8	MvccRawStoreMaintenanceDiagnosticsTest;MvccSqlLongReaderPurgeStressTest	committed changes that queue a table for maintenance
+delosdb.mvcc.rawStoreMaintenance.enabled	SUPPORTED_SETTING	false	MvccRawStoreMaintenanceDiagnosticsTest;MvccSqlLongReaderPurgeStressTest	true enables background vacuum; the maintenance profile
+delosdb.mvcc.rawStoreMaintenance.periodMillis	SUPPORTED_SETTING	1000	MvccRawStoreMaintenanceDiagnosticsTest;MvccSqlLongReaderPurgeStressTest	maintenance period
+delosdb.mvcc.rawStoreVerticalSlice.failurePoint	TEST_HOOK	-	-	crash injection for recovery tests
+delosdb.mvcc.snapshotLeaseRegistry.slots	SUPPORTED_DEFAULT	256	MvccRawStoreVacuumTest	boot rejects invalid values; only the default is tested
+delosdb.mvcc.transactionStatusCacheSlots	EXPERIMENT	4096	-	tunes the Gen2 transaction-status experiment
+delosdb.optimizer.costModelProvider	EXPERIMENT	off	-	no test sets it
+delosdb.optimizer.predicatePushdown	EXPERIMENT	false	-	-
+delosdb.optimizer.predicatePushdown.consume	EXPERIMENT	false	-	-
+delosdb.storage.cachedPageValidity.disabled	SUPPORTED_DEFAULT	false	CachedPageValidityTest	true (allocation-cache check on every fetch) is not tested
+delosdb.storage.insertLanes.disabled	SUPPORTED_DEFAULT	false	HeapInsertLaneTest	true (one insert page per container) is not tested
