@@ -30,7 +30,6 @@ import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
 import org.apache.derby.iapi.store.types.DelosStorageMaintenanceSnapshot;
-import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 /** Non-owning diagnostics adapter for the RawStore-backed MVCC runtime. */
 public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
@@ -76,7 +75,6 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
         } else {
             MvccRawStoreDiagnosticsDirectory.clearAllForTesting();
         }
-        clearTransactionsForTesting();
     }
 
     @Override
@@ -119,61 +117,6 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     }
 
     @Override
-    public Path pageVolumeStateFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path rowDirectoryStateFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path reusablePageIndexFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path pageMutationLogFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path writeAheadLogFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path checkpointFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path legacySnapshotFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public String checkpointStatusForTesting(int segment, long containerId) {
-        return "RAWSTORE_OWNED";
-    }
-
-    @Override
-    public int physicalVersionCountForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public int logicalRowCountForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public long pageCountForTesting(int segment, long containerId) {
-        return rawStoreRuntime().tableStorageSnapshot(segment, containerId).pageCount();
-    }
-
-    @Override
     public long overflowPageCountForTesting(int segment, long containerId) {
         return rawStoreRuntime().tableStorageSnapshot(segment, containerId).overflowPageCount();
     }
@@ -181,150 +124,6 @@ public final class MvccStorageDiagnostics implements DelosStorageDiagnostics {
     @Override
     public long reusablePageCountForTesting(int segment, long containerId) {
         return rawStoreRuntime().tableStorageSnapshot(segment, containerId).reusablePageCount();
-    }
-
-    @Override
-    public long pageCacheMaxPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheSizeForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheHitCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheMissCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheWriteCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheEvictionCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheInvalidationCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public int consistencyErrorCountForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public String consistencySummaryForTesting(int segment, long containerId) {
-        return "RawStore owns consistency and recovery";
-    }
-
-    @Override
-    public void assertConsistentForTesting(int segment, long containerId) {
-    }
-
-    @Override
-    public boolean lastVacuumSkippedForTesting(int segment, long containerId) {
-        return false;
-    }
-
-    @Override
-    public String lastVacuumReasonForTesting(int segment, long containerId) {
-        return "RawStore maintenance diagnostics are database-scoped";
-    }
-
-    @Override
-    public int lastVacuumRemovedVersionsForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public int lastVacuumRemainingVersionsForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public void resetMutationCountersForTesting() {
-    }
-
-    @Override
-    public int insertCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int updateCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int deleteCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void resetScanCountersForTesting() {
-    }
-
-    @Override
-    public int scanOpenCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void resetQualifierRejectCountForTesting() {
-    }
-
-    @Override
-    public int qualifierRejectCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void resetCandidateIndexCountersForTesting() {
-    }
-
-    @Override
-    public int candidateIndexLookupCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int candidateIndexRowIdCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int candidateIndexVisibilityRejectCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int candidateIndexQualifierRejectCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void clearTransactionsForTesting() {
-    }
-
-    @Override
-    public boolean isProviderScan(Object scanController) {
-        return scanController instanceof MvccRawStoreScanController;
-    }
-
-    @Override
-    public boolean hasLocatorHint(StoreRowLocation location) {
-        return MvccRowLocation.from(location).hasLocatorHint();
     }
 
     private MvccRawStoreRuntime rawStoreRuntime() {

@@ -20,85 +20,9 @@
  */
 package org.apache.derby.iapi.store.types;
 
-import java.util.List;
-
 /** Page, free-space, visibility, and local-pruning diagnostics. */
 interface DelosStorageSpaceDiagnostics {
-    long pageCountForTesting(int segment, long containerId);
-
     long overflowPageCountForTesting(int segment, long containerId);
 
     long reusablePageCountForTesting(int segment, long containerId);
-
-    default long freeSpaceMapPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default int freeSpaceMapMaxFreeBytesForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    default long freeSpaceMapLookupCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapHitCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapNonLastHitCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapMissCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapStaleEntryCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapUpdateCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long freeSpaceMapRebuildCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapOldVersionPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapPrunablePageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapTombstonePageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapAllVisiblePageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapOverflowPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapNeedsCheckerPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapUpdateCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long visibilityMapRebuildCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
 }

@@ -20,7 +20,6 @@ delosdb-client/src/main/java/org/apache/derby/client/net/NetConnection.java	NetC
 delosdb-client/src/main/java/org/apache/derby/client/net/Request.java	Request	writePlainScalarStream	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
 delosdb-client/src/main/java/org/apache/derby/client/net/Request.java	Request	writePlainScalarStream	Exception	2	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
 delosdb-client/src/main/java/org/apache/derby/client/net/Request.java	Request	writeUDT	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
-delosdb-engine/src/main/java/org/apache/derby/iapi/store/types/DelosMvccAnalyzeStatisticsLifecycleDiagnostics.java	DelosMvccAnalyzeStatisticsLifecycleDiagnostics	recordExplicitUpdateStatistics	RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
 delosdb-engine/src/main/java/org/apache/derby/iapi/db/OptimizerTrace.java	OptimizerTrace	getOptimizerTraceOutput	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
 delosdb-engine/src/main/java/org/apache/derby/iapi/db/OptimizerTrace.java	OptimizerTrace	getOptimizerTracer	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
 delosdb-engine/src/main/java/org/apache/derby/iapi/db/OptimizerTrace.java	OptimizerTrace	setOptimizerTracer	Throwable	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY
@@ -112,7 +111,6 @@ delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportReadData.java	Impo
 delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportReadData.java	ImportReadData	getClobColumnFromExtFileAsString	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
 delosdb-engine/src/main/java/org/apache/derby/impl/load/ImportReadData.java	ImportReadData	initExternalLobFile	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
 delosdb-engine/src/main/java/org/apache/derby/impl/services/daemon/BasicDaemon.java	BasicDaemon	serviceClient	Throwable	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
-delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/IndexStatisticsDaemonImpl.java	IndexStatisticsDaemonImpl	recordDelosMvccAnalyzeStatisticsLifecycle	StandardException | RuntimeException	1	INTENTIONAL_BEST_EFFORT	STORAGE_DIAGNOSTIC_OR_CLEANUP
 delosdb-engine/src/main/java/org/apache/derby/impl/sql/catalog/IndexStatisticsDaemonImpl.java	IndexStatisticsDaemonImpl	run	RuntimeException	1	INTENTIONAL_BEST_EFFORT	DIAGNOSTIC_OR_SHUTDOWN_BEST_EFFORT
 delosdb-engine/src/main/java/org/apache/derby/impl/services/jce/JCECipherFactory.java	JCECipherFactory	privAccessGetInputStream	Exception	1	REQUIRED_BOUNDARY_CATCH	SQL_OR_ENGINE_EXCEPTION_TRANSLATION
 delosdb-engine/src/main/java/org/apache/derby/impl/services/locks/Timeout.java	Timeout	buildLockTableString	Exception	1	LEGACY_COMPATIBILITY	INHERITED_ENGINE_COMPATIBILITY

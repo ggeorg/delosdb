@@ -16,10 +16,9 @@ contribute bounded statistics and cost information only through explicit Derby-c
 
 ## Store-cost integration
 
-`StoreCostController` is the compatible planning seam. `MvccStoreCostController` may derive estimates
-from `DelosStorageStatistics` only through the explicit MVCC storage-statistics cost path. The native
-Derby store-cost controller remains usable when provider estimates are absent, disabled, stale, or
-rejected.
+`StoreCostController` is the compatible planning seam. `MvccStoreCostController` derives its
+estimates from the row count persisted with an MVCC table and the table's physical container size;
+heap tables keep Derby's native store-cost controller.
 
 `CostModelProvider` and `StoreCostControllerBridge` are internal adapters, not a public optimizer SPI.
 They may consume provider estimates only when the request carries a safe Derby baseline. The older

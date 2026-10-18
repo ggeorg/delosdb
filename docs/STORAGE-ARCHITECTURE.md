@@ -154,17 +154,13 @@ as permanently post-v1.
 
 ## Consistency and diagnostics
 
-Heap, B-tree, and MVCC implementations expose provider-neutral consistency reports. Diagnostics are
-read-only and must not become repair, cleanup, or hidden execution-routing mechanisms.
+`SYSCS_UTIL.SYSCS_CHECK_TABLE` checks heap and MVCC tables alike: it verifies every index of a table
+against its base rows. Diagnostics are read-only and must not become repair, cleanup, or hidden
+execution-routing mechanisms.
 
-The shared lifecycle view is represented by `DelosStorageLifecycleConsistencySnapshot` and
-`DelosStorageLifecycleConsistencyReport`. `DelosStorageDiagnosticsRegistry.lifecycleConsistencySnapshot(...)`
-and `lifecycleConsistencyReport(...)` aggregate existing checkpoint, purge/vacuum, analyze/statistics,
-backup-marker, and consistency signals without creating another storage authority. The report accepts
-`DelosStorageConsistencyTarget`, so heap and MVCC targets can be inspected through one read-only shape.
-
-`StorageLifecycleConsistencyReportTest` verifies a mixed heap/MVCC database through lifecycle changes,
-shutdown, and reopen while preserving SQL results.
+`DelosStorageDiagnosticsRegistry` exposes the measured runtime state: the MVCC maintenance, memory,
+table-storage and transaction snapshots, RawStore I/O counters, page, overflow-page and
+reusable-page counts, and the heap sanity, raw-store boundary and storage checks.
 
 ## Protected boundaries
 

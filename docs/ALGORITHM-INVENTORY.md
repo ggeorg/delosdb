@@ -149,22 +149,16 @@ Maintenance does not own a second checkpoint, log, or durability system.
 
 ## Optimizer statistics and cost
 
-Derby's optimizer remains authoritative. DelosDB exposes storage statistics and cost information
-through provider-neutral contracts and MVCC/heap implementations where appropriate. These inputs may
-improve costing and diagnostics but do not create a parallel optimizer.
+Derby's optimizer remains authoritative. Each storage provider answers it through Derby's
+`StoreCostController` seam: `MvccStoreCostController` costs MVCC tables from the row count persisted
+with the table and their physical container size. There is no parallel optimizer.
 
 ## Diagnostics and JFR
 
 Diagnostics are read-only observations. They must not select a storage provider, decide visibility,
 repair data, commit transactions, or change optimizer authority.
 
-The production storage-lifecycle JFR surface intentionally has one live MVCC analyze/statistics hook:
-
-```text
-DelosStorageLifecycleJfr.recordMvccAnalyzeStatistics
-```
-
-Retired experimental event surfaces are not production authorities.
+DelosDB records no storage-lifecycle JFR events.
 
 ## Differential and external validation
 

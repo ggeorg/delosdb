@@ -67,8 +67,8 @@ v1 limitation: true MVCC SERIALIZABLE remains part of the v1 product direction.
 
 ## Consistency diagnostics
 
-DelosDB keeps the inherited consistency-check surface and extends the storage diagnostics layer with provider-neutral consistency reporting.
+DelosDB keeps the inherited consistency-check surface.
 
-Heap tables participate in `SYSCS_UTIL.SYSCS_CHECK_TABLE(...)` through a read-only heap sanity checker. Mixed heap/MVCC diagnostics are exposed through DelosDB storage metadata/diagnostic APIs using a stable report shape.
+`SYSCS_UTIL.SYSCS_CHECK_TABLE(...)` checks heap and MVCC tables alike, verifying every index against the table's base rows.
 
 Consistency diagnostics do not repair storage, rewrite pages, or change table contents.

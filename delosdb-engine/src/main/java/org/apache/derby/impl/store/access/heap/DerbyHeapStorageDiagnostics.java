@@ -35,7 +35,6 @@ import org.apache.derby.iapi.store.types.DelosRawStoreIoSnapshot;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnostics;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsContext;
 import org.apache.derby.iapi.store.types.DelosStorageDiagnosticsRegistry;
-import org.apache.derby.iapi.store.types.StoreRowLocation;
 
 /**
  * Read-only diagnostics adapter for Derby-compatible heap containers.
@@ -91,62 +90,6 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         return DelosRawStoreIoSnapshot.unavailable();
     }
 
-
-    @Override
-    public Path pageVolumeStateFileForTesting(int segment, long containerId) {
-        return heapContainerPath(segment, containerId);
-    }
-
-    @Override
-    public Path rowDirectoryStateFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path reusablePageIndexFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path pageMutationLogFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path writeAheadLogFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path checkpointFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public Path legacySnapshotFileForTesting(int segment, long containerId) {
-        return null;
-    }
-
-    @Override
-    public String checkpointStatusForTesting(int segment, long containerId) {
-        return Files.isRegularFile(heapContainerPath(segment, containerId)) ? "HEAP_FILE_OBSERVED" : "HEAP_FILE_MISSING";
-    }
-
-    @Override
-    public int physicalVersionCountForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public int logicalRowCountForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public long pageCountForTesting(int segment, long containerId) {
-        return DerbyHeapContainerFiles.snapshot(databaseDirectory(), segment, containerId).estimatedPageCount();
-    }
-
     @Override
     public long overflowPageCountForTesting(int segment, long containerId) {
         return 0L;
@@ -157,60 +100,11 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
         return 0L;
     }
 
-    @Override
-    public long pageCacheMaxPageCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheSizeForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheHitCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheMissCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheWriteCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheEvictionCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public long pageCacheInvalidationCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    @Override
-    public int consistencyErrorCountForTesting(int segment, long containerId) {
-        return Files.isRegularFile(heapContainerPath(segment, containerId)) ? 0 : 1;
-    }
-
-    @Override
-    public String consistencySummaryForTesting(int segment, long containerId) {
+    private String consistencySummaryForTesting(int segment, long containerId) {
         Path file = heapContainerPath(segment, containerId);
         return Files.isRegularFile(file)
                 ? "heap container file exists: " + file
                 : "heap container file is missing: " + file;
-    }
-
-    @Override
-    public void assertConsistentForTesting(int segment, long containerId) {
-        Path file = heapContainerPath(segment, containerId);
-        if (!Files.isRegularFile(file)) {
-            throw new IllegalStateException("Heap container file is missing: " + file);
-        }
     }
 
     @Override
@@ -337,7 +231,6 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
                 observations);
     }
 
-
     @Override
     public DelosHeapRawStoreBoundaryDiagnostics heapRawStoreBoundaryDiagnosticsForTesting(
             int segment,
@@ -369,102 +262,6 @@ public final class DerbyHeapStorageDiagnostics implements DelosStorageDiagnostic
                 false,
                 observations);
     }
-
-    @Override
-    public boolean lastVacuumSkippedForTesting(int segment, long containerId) {
-        return true;
-    }
-
-    @Override
-    public String lastVacuumReasonForTesting(int segment, long containerId) {
-        return "heap diagnostics are read-only";
-    }
-
-    @Override
-    public int lastVacuumRemovedVersionsForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public int lastVacuumRemainingVersionsForTesting(int segment, long containerId) {
-        return 0;
-    }
-
-    @Override
-    public void resetMutationCountersForTesting() {
-    }
-
-    @Override
-    public int insertCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int updateCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int deleteCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void resetScanCountersForTesting() {
-    }
-
-    @Override
-    public int scanOpenCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void resetQualifierRejectCountForTesting() {
-    }
-
-    @Override
-    public int qualifierRejectCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void resetCandidateIndexCountersForTesting() {
-    }
-
-    @Override
-    public int candidateIndexLookupCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int candidateIndexRowIdCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int candidateIndexVisibilityRejectCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public int candidateIndexQualifierRejectCountForTesting() {
-        return 0;
-    }
-
-    @Override
-    public void clearTransactionsForTesting() {
-    }
-
-    @Override
-    public boolean isProviderScan(Object scanController) {
-        return false;
-    }
-
-    @Override
-    public boolean hasLocatorHint(StoreRowLocation location) {
-        return false;
-    }
-
 
     private Path databaseDirectory() {
         if (explicitDatabaseDirectory == null) {

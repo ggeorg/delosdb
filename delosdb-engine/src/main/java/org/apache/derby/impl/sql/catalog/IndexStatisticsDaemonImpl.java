@@ -24,7 +24,6 @@ package org.apache.derby.impl.sql.catalog;
 import org.apache.derby.impl.sql.storetypes.EngineStoreRowLocationBridge;
 
 import java.io.PrintWriter;
-import java.nio.file.Path;
 import java.sql.Connection;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,7 +39,6 @@ import org.apache.derby.shared.common.reference.SQLState;
 import org.apache.derby.iapi.services.context.ContextManager;
 import org.apache.derby.iapi.services.context.ContextService;
 import org.apache.derby.iapi.services.daemon.IndexStatisticsDaemon;
-import org.apache.derby.iapi.store.types.DelosMvccAnalyzeStatisticsLifecycleDiagnostics;
 import org.apache.derby.iapi.services.property.PropertyUtil;
 import org.apache.derby.shared.common.sanity.SanityManager;
 import org.apache.derby.shared.common.stream.HeaderPrintWriter;
@@ -1034,32 +1032,10 @@ public class IndexStatisticsDaemonImpl
         TableDescriptor td = (TableDescriptor) tdObject;
         ConglomerateDescriptor[] cds = (ConglomerateDescriptor[]) cdsObject;
         updateIndexStatsMinion(lcc, td, cds, AS_EXPLICIT_TASK);
-        recordDelosMvccAnalyzeStatisticsLifecycle(lcc, td, runContext);
         trace(0, "explicit run completed" + (runContext != null
                                         ? " (" + runContext + "): "
                                         : ": ") +
                                     td.getQualifiedName());
-    }
-
-    private static void recordDelosMvccAnalyzeStatisticsLifecycle(
-            LanguageConnectionContext lcc,
-            TableDescriptor td,
-            String runContext) {
-        try {
-            DelosMvccAnalyzeStatisticsLifecycleDiagnostics.recordExplicitUpdateStatistics(
-                    Path.of(Monitor.getServiceName(lcc.getDatabase())),
-                    td.getStorageProviderName(),
-                    td.getQualifiedName(),
-                    td.getHeapConglomerateId(),
-                    runContext);
-        } catch (StandardException | RuntimeException e) {
-            DelosMvccAnalyzeStatisticsLifecycleDiagnostics.recordDiagnosticFailure(
-                    td.getStorageProviderName(),
-                    td.getQualifiedName(),
-                    0L,
-                    runContext,
-                    e);
-        }
     }
 
     /**

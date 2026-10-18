@@ -73,28 +73,21 @@ public record DelosStoragePredicatePushdown(String providerId,
         }
     }
 
-    public static DelosStoragePredicatePushdown plan(
-            DelosStorageCapabilities capabilities,
-            DelosStoragePredicatePushdownRequest request) {
-        Objects.requireNonNull(capabilities, "capabilities");
+    /**
+     * Plans which predicates the storage provider could evaluate. Only MVCC
+     * exposes ordered lookups backed by its ordered index pages, and only for
+     * current-committed reads; the snapshot shortcut stays unproven, so
+     * snapshot and writer-borrowed reads keep every predicate in Derby.
+     */
+    public static DelosStoragePredicatePushdown plan(DelosStoragePredicatePushdownRequest request) {
         Objects.requireNonNull(request, "request");
-        if (!DelosStorageProviderIds.matches(capabilities.providerId(), request.providerId())
-                || capabilities.segment() != request.segment()
-                || capabilities.containerId() != request.containerId()) {
-            throw new IllegalArgumentException("capabilities and predicate request target do not match");
-        }
-
+        boolean orderedLookup = DelosStorageProviderIds.isMvcc(request.providerId());
         boolean currentCommittedSafe = request.currentCommittedRead()
                 && !request.snapshotRead()
                 && !request.writerBorrowedRead()
-                && capabilities.supportsCurrentCommittedShortcut()
-                && capabilities.supportsOrderedLookup();
-        boolean snapshotSafe = request.snapshotRead()
-                && capabilities.supportsSnapshotShortcut()
-                && capabilities.supportsOrderedLookup();
-        boolean canPush = currentCommittedSafe
-                && request.hasStorageCandidates()
-                && !capabilities.consumedByDerbyOptimizer();
+                && orderedLookup;
+        boolean snapshotSafe = false;
+        boolean canPush = currentCommittedSafe && request.hasStorageCandidates();
 
         List<String> pushedPredicates = canPush
                 ? request.storageCandidatePredicates()
@@ -108,7 +101,7 @@ public record DelosStoragePredicatePushdown(String providerId,
         List<String> observations = new ArrayList<>();
         observations.add("predicate pushdown model is read-only");
         observations.add("Derby optimizer consumption remains disabled");
-        observations.add("provider: " + capabilities.providerId());
+        observations.add("provider: " + request.providerId());
         observations.add("read mode: " + request.readMode());
         if (canPush) {
             observations.add("storage candidates are safe for current-committed ordered lookup metadata");
@@ -116,20 +109,20 @@ public record DelosStoragePredicatePushdown(String providerId,
             observations.add("snapshot reads keep all candidates as Derby remainders until snapshot shortcut is proven");
         } else if (request.writerBorrowedRead()) {
             observations.add("writer-borrowed reads keep all candidates as Derby remainders");
-        } else if (!capabilities.supportsOrderedLookup()) {
+        } else if (!orderedLookup) {
             observations.add("provider does not expose Delos ordered lookup capability");
         } else {
             observations.add("no storage predicate was pushed for this metadata request");
         }
 
         return new DelosStoragePredicatePushdown(
-                capabilities.providerId(),
-                capabilities.segment(),
-                capabilities.containerId(),
+                request.providerId(),
+                request.segment(),
+                request.containerId(),
                 true,
                 request.predicateDescription(),
                 request.readMode(),
-                capabilities.supportsOrderedLookup(),
+                orderedLookup,
                 !pushedPredicates.isEmpty(),
                 !remainderPredicates.isEmpty(),
                 currentCommittedSafe,
