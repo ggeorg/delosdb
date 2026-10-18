@@ -68,18 +68,6 @@ interface DelosStorageCacheConsistencyDiagnostics {
         return 0L;
     }
 
-    default long attributeOverflowWriteCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long attributeOverflowReadCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long attributeOverflowInlineRowBytesForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
     default long attributeOverflowValueBytesForTesting(int segment, long containerId) {
         return 0L;
     }

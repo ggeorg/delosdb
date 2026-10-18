@@ -42,39 +42,11 @@ interface DelosStorageOperationDiagnostics {
 
     int candidateIndexLookupCountForTesting();
 
-    default int candidateIndexFallbackLookupCountForTesting() {
-        return 0;
-    }
-
-    default boolean candidateIndexDiagnosticFallbackEnabledForTesting() {
-        return false;
-    }
-
     int candidateIndexRowIdCountForTesting();
-
-    default int candidateIndexKeyCountForTesting(int segment, long containerId) {
-        return 0;
-    }
 
     int candidateIndexVisibilityRejectCountForTesting();
 
     int candidateIndexQualifierRejectCountForTesting();
-
-    default int pageBackedCommittedScanCountForTesting() {
-        return 0;
-    }
-
-    default int pageBackedCommittedReadCountForTesting() {
-        return 0;
-    }
-
-    default int rowIdFastPathReadCountForTesting() {
-        return 0;
-    }
-
-    default int rowIdFastPathHitCountForTesting() {
-        return 0;
-    }
 
     void clearTransactionsForTesting();
 

@@ -66,10 +66,6 @@ interface DelosStorageSpaceDiagnostics {
         return 0L;
     }
 
-    default List<String> freeSpaceMapPageSummariesForTesting(int segment, long containerId) {
-        return List.of();
-    }
-
     default long visibilityMapPageCountForTesting(int segment, long containerId) {
         return 0L;
     }
@@ -103,26 +99,6 @@ interface DelosStorageSpaceDiagnostics {
     }
 
     default long visibilityMapRebuildCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default List<String> visibilityMapPageSummariesForTesting(int segment, long containerId) {
-        return List.of();
-    }
-
-    default long pageLocalPruneAttemptCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long pageLocalPruneSuccessCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long pageLocalPruneFallbackCountForTesting(int segment, long containerId) {
-        return 0L;
-    }
-
-    default long pageLocalPruneRemovedVersionCountForTesting(int segment, long containerId) {
         return 0L;
     }
 }
