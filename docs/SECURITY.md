@@ -138,6 +138,12 @@ transformation paths. PlanExporter closes stylesheet and output streams determin
 
 ```bash
 ./gradlew :delosdb-tests:runDelosSecurityTruthTest
-./gradlew delosSecurityTruthStaticAnalysis
-./gradlew delosHeapObjectDeserializationFilterStaticAnalysis
+./gradlew :delosdb-tests:delosUnitTests --tests '*ObjectDeserializationBoundaryTest'
+./gradlew :delosdb-tests:delosFunctionalFullTierTests \
+          --tests '*HeapObjectDeserializationFilterTest' \
+          --tests '*ImportObjectDeserializationFilterTest'
 ```
+
+`ImportObjectDeserializationFilterTest` runs SQL `EXPORT` and `IMPORT` on a UDT column: the default
+policy rejects the imported value, and the `delosdb.import.objectDeserializationFilter` allow-list
+admits it. The inherited `ImportExportTest` sets that allow-list for its `Price` type.

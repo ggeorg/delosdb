@@ -31,6 +31,7 @@ import org.apache.derbyTesting.junit.BaseTestSuite;
 import org.apache.derbyTesting.junit.CleanDatabaseTestSetup;
 import org.apache.derbyTesting.junit.JDBC;
 import org.apache.derbyTesting.junit.SupportFilesSetup;
+import org.apache.derbyTesting.junit.SystemPropertyTestSetup;
 import org.apache.derbyTesting.junit.TestConfiguration;
 
 /**
@@ -62,7 +63,7 @@ public class ImportExportTest extends BaseJDBCTestCase {
 	public static Test baseSuite(String name) {
         BaseTestSuite suite = new BaseTestSuite(ImportExportTest.class, name);
 		Test test = new SupportFilesSetup(suite, new String[] {"functionTests/testData/ImportExport/TwoLineBadEOF.dat"} );
-		return new CleanDatabaseTestSetup(test) {
+		test = new CleanDatabaseTestSetup(test) {
             protected void decorateSQL(Statement s) throws SQLException {
 
                 s.execute( "create type Price external name 'org.apache.derbyTesting.functionTests.tests.lang.Price' language java" );
@@ -97,6 +98,14 @@ public class ImportExportTest extends BaseJDBCTestCase {
                 s.execute( "create table t6( a int, b hashmap )" );
                 }
         };
+        // DelosDB rejects every application class in imported UDT values by
+        // default (docs/SECURITY.md). Allow what these tests exchange: Price
+        // with its String, BigDecimal and Timestamp fields, and the HashMap
+        // that testCastingProblem imports into a Price column.
+        return SystemPropertyTestSetup.singleProperty(test,
+                "delosdb.import.objectDeserializationFilter",
+                "org.apache.derbyTesting.functionTests.tests.lang.Price;"
+                        + "java.base/*;java.sql/java.sql.Timestamp;!*");
 	}
 
     /**
