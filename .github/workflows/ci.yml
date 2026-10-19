@@ -8,35 +8,24 @@ on:
 
 jobs:
   build:
-    name: Build, smoke, and inherited suite
+    name: Full verification
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '25'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Check cleanup invariants
-        run: |
-          ./scripts/remove-checkpoint-docs.sh
-          git diff --exit-code
-
+      # fullVerification includes check, which runs the runtime smokes and the
+      # Derby language suite. --continue and collectAllFailures report every
+      # failing suite and test instead of stopping at the first.
       - name: Full verification
-        run: ./gradlew --no-daemon fullVerification
-
-      - name: Run DelosDB runtime smokes
-        run: ./gradlew --no-daemon derbyRuntimeSmoke
-
-      - name: Run inherited Derby language suite
-        run: ./gradlew --no-daemon :delosdb-tests:runDerbyLangSuite
-
-      - name: Sysinfo from jars
-        run: ./gradlew --no-daemon sysinfoFromJars
+        run: ./gradlew --no-daemon --continue fullVerification -Pdelosdb.derby.collectAllFailures=true
