@@ -1,8 +1,8 @@
 /**
- * Provider-neutral DelosDB external-index interfaces.
+ * Provider-neutral DelosDB external-index interfaces and the annotations that
+ * mark API stability.
  */
 module io.github.ggeorg.delosdb.spi {
-    requires transitive io.github.ggeorg.delosdb.annotations;
-
+    exports io.github.ggeorg.delosdb.spi.annotation;
     exports io.github.ggeorg.delosdb.spi.index;
 }

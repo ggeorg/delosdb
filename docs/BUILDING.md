@@ -193,7 +193,8 @@ Verification levels:
 
 `test` is unit-only. `quickVerification` adds DelosDB quick smoke and runtime smoke checks. `check`
 adds the remaining DelosDB functional tests, concurrency and recovery lanes, Derby language, NIST
-SQL-92, permanent architecture/repository gates and `:delosdb-demos:compileDemos`, which compiles
+SQL-92, permanent architecture/repository gates, `verifyPublicationDependencies` (each published POM
+declares the DelosDB modules its `module-info` requires) and `:delosdb-demos:compileDemos`, which compiles
 each demo on its own against the assembled runtime jars (it proves the demos compile, not that they
 run; `scores` is left out because it needs Apache Commons Math). Quick and full-tier functional partitions are
 disjoint, so `check` executes each functional test once. `fullVerification` adds the remaining

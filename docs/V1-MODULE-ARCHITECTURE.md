@@ -7,12 +7,11 @@ small amount of deferred structure represented in the checked architecture manif
 
 ## Current module graph
 
-The current build contains 16 Gradle subprojects:
+The current build contains 14 Gradle subprojects:
 
 ```text
 delosdb-osgi-stub
 delosdb-commons
-delosdb-annotations
 delosdb-spi
 delosdb-engine
 delosdb-client
@@ -38,6 +37,7 @@ delosdb-storage-derby
 delosdb-derby-store-api
 delosdb-runtime-api
 delosdb-storeless
+delosdb-annotations
 ```
 
 `delosdb-storage-mvcc`, `delosdb-storage-derby`, `delosdb-derby-store-api` and `delosdb-runtime-api`
@@ -57,6 +57,12 @@ code. `EngineType.STORELESS_ENGINE` stays, as part of Derby's inherited module-b
 Restoring the prototype means taking it from Derby 10.17.1.0 or from git history, and adding a test
 that boots it.
 
+`delosdb-annotations` held the stability annotations (`@InternalApi`, `@LegacyInternal`,
+`@ExperimentalSpi`). Its only users were `delosdb-spi` and the engine, which already requires the
+SPI, and because the engine's published POM did not name either module, the engine could not start
+as a Java module from Maven. The annotations moved into `delosdb-spi` under the same package,
+`io.github.ggeorg.delosdb.spi.annotation`; the unused `@PublicSpi` was removed.
+
 ## Ownership rules
 
 ```text
@@ -72,9 +78,9 @@ Retired storage modules do not return through build-output or classpath shortcut
 The important current production direction is:
 
 ```text
-delosdb-commons    delosdb-annotations    delosdb-spi
-        \                  |                  /
-                     delosdb-engine
+delosdb-commons          delosdb-spi
+        \                  /
+          delosdb-engine
            (kernel contracts and services; SQL; store contracts in iapi.store;
             RawStore and heap in impl.store; MVCC in impl.store.access.mvcc,
             found through neutral discovery)
@@ -86,7 +92,6 @@ Representative allowed dependencies are:
 delosdb-engine
     -> delosdb-spi
     -> delosdb-commons
-    -> delosdb-annotations
 ```
 
 Inside the engine module, package groups replace project boundaries. The checked manifest
@@ -126,8 +131,10 @@ the engine.
 
 ### `delosdb-spi`
 
-Owns provider-neutral extension contracts. Implementation-specific MVCC classes do not appear in
-these APIs.
+Owns provider-neutral extension contracts and the annotations that mark API stability
+(`@InternalApi`, `@LegacyInternal`, `@ExperimentalSpi`). Implementation-specific MVCC classes do not
+appear in these APIs. It stays separate from the engine so that an optional provider, such as the
+deferred `delosdb-search-lucene`, compiles against it without the engine.
 
 ### Store contracts (`delosdb-engine`, `iapi.store`)
 

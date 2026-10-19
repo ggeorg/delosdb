@@ -1,7 +1,6 @@
 # DelosDB source-category inventory.
 # One repository-relative production Java path per line.
 # Used only by the human-maintainability inventory; not an S0 architecture gate.
-delosdb-annotations/src/main/java/module-info.java
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/ReleaseNotesGenerator.java
 delosdb-client/src/main/java/module-info.java
 delosdb-client/src/main/java/org/apache/derby/client/BasicClientDataSource.java

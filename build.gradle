@@ -476,8 +476,8 @@ tasks.register('smoke', JavaExec) {
 // Derby-compatible runtime jar names for now.
 ext.delosdbPublicationMetadata = [
         'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'jar',        title: 'DelosDB Shared Utilities', dependencies: []],
-        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'jar',       title: 'DelosDB SPI Stability Markers', dependencies: []],
-        'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons']],
+        'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'jar',       title: 'DelosDB SPI', dependencies: []],
+        'delosdb-engine'       : [artifactId: 'delosdb-engine',        jarTask: 'derbyJar',              title: 'DelosDB Embedded Engine', dependencies: ['delosdb-commons', 'delosdb-spi']],
         'delosdb-client'       : [artifactId: 'delosdb-client',        jarTask: 'jar',        title: 'DelosDB Network Client', dependencies: ['delosdb-commons']],
         'delosdb-tools'        : [artifactId: 'delosdb-tools',         jarTask: 'jar',         title: 'DelosDB Tools', dependencies: ['delosdb-commons', 'delosdb-engine', 'delosdb-client']],
         'delosdb-runner'       : [artifactId: 'delosdb-runner',        jarTask: 'jar',           title: 'DelosDB Runner', dependencies: ['delosdb-commons', 'delosdb-tools', 'delosdb-server']],
@@ -555,6 +555,45 @@ subprojects { subproject ->
     }
 }
 
+// A published POM must name every published module its module descriptor
+// requires, or the artifact cannot start as a Java module from Maven.
+tasks.register('verifyPublicationDependencies') {
+    group = 'verification'
+    description = 'Verifies that each published POM declares the DelosDB modules its module-info requires.'
+    def publications = rootProject.ext.delosdbPublicationMetadata
+    def descriptors = publications.keySet().collectEntries { name ->
+        [name, project(":${name}").file('src/main/java/module-info.java')]
+    }
+    inputs.files(descriptors.values())
+    inputs.property('dependencies', publications.collectEntries { name, info -> [name, info.dependencies] })
+
+    doLast {
+        def withoutComments = { File descriptor ->
+            descriptor.text.replaceAll(/(?s)\/\*.*?\*\//, '').replaceAll(/\/\/[^\n]*/, '')
+        }
+        def projectByModule = descriptors.collectEntries { name, descriptor ->
+            [(withoutComments(descriptor) =~ /\bmodule\s+([\w.]+)/)[0][1], name]
+        }
+        def problems = []
+        descriptors.each { name, descriptor ->
+            def required = (withoutComments(descriptor) =~ /\brequires\s+(?:transitive\s+)?([\w.]+)\s*;/)
+                    .collect { it[1] }
+                    .findAll { !it.startsWith('java.') && !it.startsWith('jdk.') }
+            required.each { module ->
+                def dependency = projectByModule[module]
+                if (dependency == null) {
+                    problems << "${name} requires ${module}, which no DelosDB publication provides"
+                } else if (!publications[name].dependencies.contains(dependency)) {
+                    problems << "${name} requires ${module}, but its POM does not declare ${dependency}"
+                }
+            }
+        }
+        if (!problems.isEmpty()) {
+            throw new GradleException("Published POM dependencies are incomplete:\n  " + problems.join('\n  '))
+        }
+    }
+}
+
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
@@ -627,6 +666,7 @@ tasks.register('quickVerification') {
 tasks.named('check') {
     dependsOn tasks.named('quickVerification'),
             ':delosdb-demos:check',
+            tasks.named('verifyPublicationDependencies'),
             ':delosdb-tests:delosFunctionalFullTierTests',
             tasks.named('delosConcurrencyTests'),
             tasks.named('delosRecoveryTests'),

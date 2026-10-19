@@ -1,7 +1,3 @@
-delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/ExperimentalSpi.java
-delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/InternalApi.java
-delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/LegacyInternal.java
-delosdb-annotations/src/main/java/io/github/ggeorg/delosdb/spi/annotation/PublicSpi.java
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosJdk25ClassFileVerifier.java
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosRepositoryIntegrityAudit.java
 delosdb-buildtools/src/main/java/org/apache/derbyBuild/DelosRepositoryIntegrityMetrics.java
@@ -228,6 +224,9 @@ delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaServerConfiguration.
 delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaSessionScheduler.java
 delosdb-server/src/main/java/org/apache/derby/impl/drda/DrdaThreading.java
 delosdb-server/src/main/java/org/apache/derby/loc/drda/package-info.java
+delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/annotation/ExperimentalSpi.java
+delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/annotation/InternalApi.java
+delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/annotation/LegacyInternal.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexAccess.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexAccessException.java
 delosdb-spi/src/main/java/io/github/ggeorg/delosdb/spi/index/IndexCapabilities.java

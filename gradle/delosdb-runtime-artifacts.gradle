@@ -7,7 +7,6 @@
 // distributions, and verification gates.
 
 ext.delosdbRuntimeJarArtifacts = [
-        [key: 'annotations', gradleProject: 'delosdb-annotations',   jarTask: 'jar',  jarName: 'delosdb-annotations.jar'],
         [key: 'spi',         gradleProject: 'delosdb-spi',           jarTask: 'jar',          jarName: 'delosdb-spi.jar'],
         [key: 'osgi',        gradleProject: 'delosdb-osgi-stub',     jarTask: 'jar',   jarName: 'osgi-framework-stub.jar'],
         [key: 'commons',     gradleProject: 'delosdb-commons',       jarTask: 'jar',         jarName: 'derbyshared.jar'],

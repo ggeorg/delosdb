@@ -15,10 +15,6 @@ java {
     targetCompatibility = JavaVersion.toVersion(rootProject.ext.javaRelease)
 }
 
-dependencies {
-    api project(':delosdb-annotations')
-}
-
 sourceSets {
     main {
         java {
@@ -44,7 +40,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB SPI Stability Markers')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB SPI')
     }
 }
 

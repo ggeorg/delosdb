@@ -37,7 +37,6 @@ configurations {
 
 dependencies {
     implementation project(':delosdb-commons')
-    implementation project(':delosdb-annotations')
     implementation project(':delosdb-spi')
     // ClassFileJava uses java.lang.classfile from java.base; no external bytecode library.
     compileOnly project(':delosdb-osgi-stub')
