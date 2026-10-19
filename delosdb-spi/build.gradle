@@ -40,7 +40,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB SPI')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB SPI', 'delosdb-spi.jar')
     }
 }
 

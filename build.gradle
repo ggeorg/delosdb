@@ -131,8 +131,24 @@ ext.delosdbLegalFiles = files(
         file('NOTICE-FORK.md')
 )
 
-ext.delosdbRuntimeJarAttributes = { String title ->
-    [
+// Derby's manifest Main-Class and Class-Path entries. Class-Path lets a jar
+// find the jars it needs beside it, which `java -jar derbyrun.jar <tool>`,
+// `java -jar derbynet.jar` and a class path naming only derbytools.jar rely
+// on. Derby's locale jars are not built and are left out; derby.jar also
+// names delosdb-spi.jar, which its module requires.
+def derbyJarLaunchAttributes = [
+        'derby.jar'             : ['Class-Path': 'derbyshared.jar delosdb-spi.jar'],
+        'derbyclient.jar'       : ['Class-Path': 'derbyshared.jar'],
+        'derbytools.jar'        : ['Class-Path': 'derby.jar derbyclient.jar derbynet.jar'],
+        'derbyoptionaltools.jar': ['Class-Path': 'derbyshared.jar'],
+        'derbynet.jar'          : ['Main-Class': 'org.apache.derby.drda.NetworkServerControl',
+                                   'Class-Path': 'derby.jar derbyshared.jar derbytools.jar'],
+        'derbyrun.jar'          : ['Main-Class': 'org.apache.derby.run.run',
+                                   'Class-Path': 'derby.jar derbyclient.jar derbytools.jar derbynet.jar derbyoptionaltools.jar derbyshared.jar']
+]
+
+ext.delosdbRuntimeJarAttributes = { String title, String jarName ->
+    (derbyJarLaunchAttributes[jarName] ?: [:]) + [
             'Implementation-Title'      : title,
             'Implementation-Version'    : delosDbVersion,
             'Implementation-Vendor'     : 'DelosDB Project',
@@ -327,6 +343,31 @@ tasks.register('sysinfoFromJars', JavaExec) {
     classpath = runtimeJars()
     mainClass = 'org.apache.derby.run.run'
     args 'sysinfo'
+}
+
+// Derby documents starting the tools and the server with `java -jar`, which
+// works only while derbyrun.jar and derbynet.jar carry Main-Class and every
+// jar's Class-Path names the jars it needs.
+tasks.register('jarLaunchSmoke') {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Runs java -jar derbyrun.jar and java -jar derbynet.jar from build/libs, as users do.'
+    def libs = layout.buildDirectory.dir('libs')
+    doLast {
+        def java = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        def launch = { String jar, List<String> args, String expected ->
+            def command = [java, '-jar', libs.get().file(jar).asFile.absolutePath] + args
+            def process = new ProcessBuilder(command).redirectErrorStream(true).start()
+            def output = process.inputStream.text
+            process.waitFor()
+            if (!output.contains(expected)) {
+                throw new GradleException("java -jar ${jar} ${args.join(' ')} did not print '${expected}':\n${output}")
+            }
+        }
+        launch('derbyrun.jar', ['ij', '--help'], 'Usage: java org.apache.derby.tools.ij')
+        launch('derbyrun.jar', ['sysinfo'], 'derbytools.jar')
+        launch('derbynet.jar', [], 'Usage: NetworkServerControl')
+    }
 }
 
 tasks.register('smokeFromJars', JavaExec) {
@@ -597,7 +638,7 @@ tasks.register('verifyPublicationDependencies') {
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
     description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars'
+    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars', 'jarLaunchSmoke'
 }
 
 final List<Object> delosPermanentArchitectureDependencies = [

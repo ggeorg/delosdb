@@ -45,7 +45,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB OSGi Framework Stub')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB OSGi Framework Stub', osgiArchiveName)
     }
 }
 

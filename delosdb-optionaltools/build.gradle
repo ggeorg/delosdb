@@ -93,6 +93,6 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Optional Tools')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Optional Tools', optionalToolsArchiveName)
     }
 }

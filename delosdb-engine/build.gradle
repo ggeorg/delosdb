@@ -197,7 +197,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine', 'delosdb-engine.jar')
     }
     doLast {
         DelosDbEngineJarVerifier.assertBootResourcesPresent(archiveFile.get().asFile)
@@ -219,7 +219,7 @@ tasks.register('derbyJar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Embedded Engine', engineArchiveName)
     }
     doLast {
         DelosDbEngineJarVerifier.assertBootResourcesPresent(archiveFile.get().asFile)

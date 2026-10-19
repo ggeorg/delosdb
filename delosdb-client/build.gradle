@@ -98,7 +98,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Network Client')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Network Client', clientArchiveName)
     }
     doLast {
         DelosDbClientJarVerifier.assertBootResourcesPresent(archiveFile.get().asFile)

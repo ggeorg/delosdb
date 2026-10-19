@@ -55,7 +55,6 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Runner')
-        attributes 'Main-Class': 'org.apache.derby.run.run'
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Runner', runnerArchiveName)
     }
 }

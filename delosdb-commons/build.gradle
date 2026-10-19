@@ -90,7 +90,7 @@ tasks.named('jar') {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Shared Utilities')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Shared Utilities', commonsArchiveName)
     }
 }
 

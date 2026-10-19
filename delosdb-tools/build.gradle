@@ -169,7 +169,7 @@ tasks.named('jar', Jar) {
         into 'META-INF'
     }
     manifest {
-        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Tools')
+        attributes rootProject.ext.delosdbRuntimeJarAttributes('DelosDB Tools', toolsArchiveName)
     }
     doLast {
         DelosDbToolsJarVerifier.assertModularPackageOwnership(archiveFile.get().asFile)
