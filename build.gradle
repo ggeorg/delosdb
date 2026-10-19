@@ -626,6 +626,7 @@ tasks.register('quickVerification') {
 
 tasks.named('check') {
     dependsOn tasks.named('quickVerification'),
+            ':delosdb-demos:check',
             ':delosdb-tests:delosFunctionalFullTierTests',
             tasks.named('delosConcurrencyTests'),
             tasks.named('delosRecoveryTests'),

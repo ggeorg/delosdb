@@ -4,3 +4,40 @@ plugins {
 
 version = rootProject.version
 group = rootProject.group
+
+// Each demo compiles on its own against the runtime jars users receive. This
+// proves the sources compile, not that the demos run correctly.
+def demoRoot = file('src/main/demo')
+def demosNotCompiledHere = [
+        scores : 'needs Apache Commons Math, which DelosDB does not ship',
+        toursdb: 'compiled and loaded by delosdb-tests'
+]
+def compiledDemos = demoRoot.listFiles()
+        .findAll { it.isDirectory() && !demosNotCompiledHere.containsKey(it.name) }
+        .collect { it.name }
+        .sort()
+
+def demoCompileTasks = compiledDemos.collect { demo ->
+    tasks.register("compileDemo${demo.capitalize()}", JavaCompile) {
+        group = 'verification'
+        description = "Compiles the ${demo} demo against the assembled runtime jars."
+        dependsOn ':jars'
+        source = fileTree(new File(demoRoot, demo)) { include '**/*.java' }
+        classpath = rootProject.ext.delosdbRuntimeJars()
+        destinationDirectory = layout.buildDirectory.dir("classes/demos/${demo}")
+        sourceCompatibility = rootProject.ext.javaRelease.toString()
+        targetCompatibility = rootProject.ext.javaRelease.toString()
+        options.release = rootProject.ext.javaRelease
+        options.encoding = 'UTF-8'
+    }
+}
+
+tasks.register('compileDemos') {
+    group = 'verification'
+    description = "Compiles every demo except ${demosNotCompiledHere.keySet().join(', ')} against the runtime jars."
+    dependsOn demoCompileTasks
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('compileDemos')
+}
