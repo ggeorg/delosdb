@@ -1,160 +1,59 @@
 # DelosDB external validation tooling
 
-DelosDB includes a CI-friendly external validation layer for MVCC lifecycle work without
-making external tools part of normal module checks or permanent verification.
+External tools such as JMH, jcstress, SQLancer and long-running soaks stay outside the normal build
+and every verification level. The deterministic DelosDB tests below are the baseline; an external
+tool adds evidence on top of them and never replaces them.
 
-The built-in deterministic harnesses remain the baseline. External tools
-wrap those entry points when the caller supplies an approved command.
+The root build used to have Gradle tasks that ran a caller-supplied external command
+(`delosJmhMicrobenchmarks`, `delosJcstressConcurrencyValidation`, `delosSqlancerMvccValidation`
+and others). They were removed in 0cf95e92; a CI job runs an external tool with its own command.
 
-## Plan report
+## Deterministic baselines
 
-Generate the external validation plan without running any external tool:
+| Concern | Command |
+|---|---|
+| Live MVCC network concurrency | `./gradlew :delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'` |
+| Heap/MVCC differential SQL | `./gradlew :delosdb-tests:delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'` |
+| Long reader against purge | `./gradlew :delosdb-tests:delosStressTests --tests '*MvccSqlLongReaderPurgeStressTest'` |
+| Page-I/O representation | `./gradlew :delosdb-tests:runDelosSharedRawStorePageIoRepresentationDecisionTest` |
 
-```bash
-./gradlew delosExternalMvccValidationPlan
-```
+The first two run in `fullVerification`, the long-reader test in `nightlyVerification`, and the
+page-I/O test, which records diagnostic timing without thresholds, in `releaseVerification` (see
+[BUILDING.md](BUILDING.md)).
 
-The report is written to:
+## JMH and concurrent-commit benchmarks
 
-```text
-build/reports/delosdb/external-mvcc-validation-plan.txt
-```
-
-It lists every external validation slot, whether a command is configured, the matching
-root task, and the built-in baseline task when one exists.
-
-## Aggregate opt-in task
-
-Run all configured external MVCC validation tools. For a local smoke check of
-the command runner, use harmless shell commands such as `echo jmh-ok`; real CI
-should replace them with approved JMH, jcstress, SQLancer, workload, or soak
-commands.
-
-```bash
-./gradlew delosExternalMvccValidation \
-  -Pdelosdb.jmh.command="echo jmh-ok" \
-  -Pdelosdb.jcstress.command="echo jcstress-ok" \
-  -Pdelosdb.sqlancer.command="echo sqlancer-ok"
-```
-
-Unconfigured tools are skipped and shown in the plan report. CI can require at
-least one configured external tool with:
-
-```bash
-./gradlew delosExternalMvccValidation \
-  -Pdelosdb.external.validation.required=true \
-  -Pdelosdb.sqlancer.command="echo sqlancer-ok"
-```
-
-## Individual task slots
-
-These root tasks remain stable opt-in entry points:
-
-* `delosJmhMicrobenchmarks` via `-Pdelosdb.jmh.command="<command>"`
-* `delosJcstressConcurrencyValidation` via `-Pdelosdb.jcstress.command="<command>"`
-* `delosTwoSidedMvccWorkloadBenchmark` via `-Pdelosdb.twoSided.command="<command>"`
-* `delosLongReaderVacuumSoak` via `-Pdelosdb.longReaderSoak.command="<command>"`
-* `delosSqlancerMvccValidation` via `-Pdelosdb.sqlancer.command="<command>"`
-
-The first four also run their matching no-dependency built-in validation harness
-before any external command. SQLancer is external-only because it is a separate
-SQL/JDBC generator.
-
-## Verification boundary
-
-External validation is deliberately not wired into:
-
-* `s0CloseoutVerification`
-* `:delosdb-engine:check`
-* `:delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests`
-
-This keeps compatibility and normal verification deterministic while allowing CI
-or release validation to opt into slower tools explicitly.
-
-## JMH performance validation
-
-The repository now contains an executable standalone JMH build under
-`benchmarks/jmh`. It consumes assembled runtime jars, targets public JDBC only,
-and remains absent from root settings, normal checks, and permanent verification:
+The standalone build under `benchmarks/jmh` consumes the assembled runtime jars, uses public JDBC
+only, and is absent from root settings and every verification level:
 
 ```bash
 ./gradlew jars
 ./gradlew -p benchmarks/jmh clean check
 ./gradlew -p benchmarks/jmh clean jmh
+./gradlew -p benchmarks/jmh runConcurrentCommitBenchmark
 ```
 
-The stable root adapter remains available for deterministic invariants and
-caller-owned CI commands:
+The JMH lane checks semantic fingerprints during measurement, writes JSON and human reports, and
+records SHA-256 fingerprints of the runtime jars and benchmark inputs. The concurrent-commit
+benchmark's commits are dominated by log syncs, whose cost varies widely between runs on a laptop
+disk; to compare two builds' code paths, alternate the builds and pass
+`-Dderby.system.durability=test` through `JAVA_TOOL_OPTIONS`.
 
-```bash
-./gradlew delosJmhMicrobenchmarks
-./gradlew delosJmhMicrobenchmarks \
-  -Pdelosdb.jmh.command="<approved external JMH command>"
-```
+## Jcstress
 
-The built-in baseline is the current page-I/O representation decision verification, not a
-wall-clock substitute for JMH. The standalone JMH lane uses public JDBC, checks
-semantic fingerprints during measurement, writes JSON and human reports, and
-records SHA-256 fingerprints of all runtime jars and benchmark inputs.
+The repository contains no jcstress harness. Concurrency correctness is covered by the network
+concurrency test above and by `delosConcurrencyTests`.
 
-## Jcstress concurrency adapter
+## SQLancer profile
 
-The stable `delosJcstressConcurrencyValidation` adapter first runs the live RawStore-backed MVCC
-network-concurrency verification:
+`benchmarks/sqlancer/delosdb-mvcc` describes the scope a SQLancer run against `delos_mvcc` should
+use: the supported generator scope, a smoke workload and the oracle scope. Nothing in the build reads
+or validates these files, and SQLancer is not a dependency; running it is up to the caller.
 
-```bash
-./gradlew :delosdb-tests:delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'
-```
-
-A CI or release job may then supply an approved external jcstress command:
-
-```bash
-./gradlew delosJcstressConcurrencyValidation \
-  -Pdelosdb.jcstress.command="<approved external jcstress command>"
-```
-
-The adapter is opt-in and outside permanent verification.
-
-## SQLancer profile skeleton
-
-`delosSqlancerProfileSkeleton` validates the opt-in SQLancer profile contract
-under:
-
-```text
-benchmarks/sqlancer/delosdb-mvcc
-```
-
-Run the skeleton validation without requiring SQLancer:
-
-```bash
-./gradlew delosSqlancerProfileSkeleton
-```
-
-Run a CI-provided SQLancer command explicitly:
-
-```bash
-./gradlew delosSqlancerProfileSkeleton \
-  -Pdelosdb.sqlancer.profile.command="<compile-and-run SQLancer command>"
-```
-
-The skeleton is external validation only. It is not wired into permanent verification, does not add
-SQLancer as a normal dependency, and does not change storage, optimizer, DRDA,
-heap, or MVCC behavior. Generated failures must be minimized and promoted into a
-normal deterministic DelosDB regression before they become release verification.
-
-## Deterministic heap/MVCC differential follow-up
-
-Randomized SQLancer findings are not promoted directly into release verification. A
-minimized case should first be added to the deterministic heap/MVCC differential
-SQL harness:
-
-```bash
-./gradlew :delosdb-tests:delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'
-```
-
-The harness compares supported SQL behavior between inherited Derby heap tables
-and `delos_mvcc` tables. It is a normal deterministic regression, not an external dependency lane. The matched workload covers
-primary-key and unique-key inserts, secondary indexes, nullable and typed values, rollback and committed
-UPDATE/DELETE/INSERT, ordered projections, grouped and scalar aggregates, indexed and date predicates,
-provider maintenance, and shutdown/reopen persistence. Intentional provider differences stay outside the
-equality probes.
+Randomized findings are not promoted directly into verification. A minimized case is first added to
+the deterministic heap/MVCC differential SQL harness, which compares supported SQL behavior between
+inherited Derby heap tables and `delos_mvcc` tables. Its matched workload covers primary-key and
+unique-key inserts, secondary indexes, nullable and typed values, rollback and committed
+UPDATE/DELETE/INSERT, ordered projections, grouped and scalar aggregates, indexed and date
+predicates, provider maintenance, and shutdown/reopen persistence. Intentional provider differences
+stay outside the equality probes.

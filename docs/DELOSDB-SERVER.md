@@ -67,9 +67,9 @@ Override:
 
 Small values keep the in-memory fast path. Large values use temp storage and cleanup-on-close/EOF behavior.
 
-## Server static verification
+## Server design rules
 
-The server static analysis rejects:
+The server keeps to these rules:
 
 ```text
 Lucene/json_simple imports in delosdb-server
@@ -81,16 +81,15 @@ scattered delos.drda.* property parsing outside DrdaServerConfiguration
 scattered virtual-thread factories outside DrdaThreading
 ```
 
-Run:
-
-```sh
-./gradlew delosServerStaticAnalysis
-```
+The module system enforces the first two: the server module requires neither Lucene nor
+json-simple, and the engine does not export its MVCC packages. The rest are conventions. The
+`delosServerStaticAnalysis` task that checked them was removed in 0cf95e92, and no gate checks them
+now.
 
 Focused server verification:
 
 ```sh
-./gradlew :delosdb-tests:delosSystemTests :delosdb-server:compileJava delosServerStaticAnalysis
+./gradlew :delosdb-tests:delosSystemTests :delosdb-tests:derbyNetworkTests :delosdb-server:compileJava
 ```
 
 ## Out of scope

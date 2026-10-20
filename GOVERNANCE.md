@@ -74,7 +74,7 @@ No release should be cut unless the required verification passes:
 ./gradlew derbyRuntimeSmoke
 ./gradlew :delosdb-tests:derbyLanguageTests
 ./gradlew :delosdb-tests:delosFunctionalTests :delosdb-tests:delosConcurrencyTests :delosdb-tests:delosRecoveryTests
-./gradlew :delosdb-tests:delosSystemTests :delosdb-server:compileJava delosServerStaticAnalysis
+./gradlew :delosdb-tests:delosSystemTests :delosdb-tests:derbyNetworkTests :delosdb-server:compileJava
 ./gradlew s0CloseoutVerification
 ```
 

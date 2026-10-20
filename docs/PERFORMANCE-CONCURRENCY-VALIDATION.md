@@ -5,20 +5,11 @@ or long-running workload is a permanent verification dependency.
 
 ## Current deterministic baselines
 
-Stable root adapters run live production-path regressions before any optional external command:
-
 ```text
-delosJmhMicrobenchmarks
-    -> runDelosSharedRawStorePageIoRepresentationDecisionTest
-
-delosJcstressConcurrencyValidation
-    -> delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'
-
-delosTwoSidedMvccWorkloadBenchmark
-    -> delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'
-
-delosLongReaderVacuumSoak
-    -> delosStressTests --tests '*MvccSqlLongReaderPurgeStressTest'
+runDelosSharedRawStorePageIoRepresentationDecisionTest
+delosSystemTests --tests '*MvccDrdaConcurrentNetworkClientTest'
+delosFunctionalTests --tests '*HeapMvccDifferentialSqlHarnessTest'
+delosStressTests --tests '*MvccSqlLongReaderPurgeStressTest'
 ```
 
 These built-in tests verify deterministic state, live SQL/network behavior, concurrency, purge
@@ -83,19 +74,10 @@ jars through public JDBC APIs only.
 ./gradlew jars
 ./gradlew -p benchmarks/jmh clean check
 ./gradlew -p benchmarks/jmh clean jmh
+./gradlew -p benchmarks/jmh runConcurrentCommitBenchmark
 ```
 
-## Stable root task slots
-
-```text
-./gradlew delosJmhMicrobenchmarks
-./gradlew delosJcstressConcurrencyValidation
-./gradlew delosTwoSidedMvccWorkloadBenchmark
-./gradlew delosLongReaderVacuumSoak
-./gradlew delosSqlancerMvccValidation
-```
-
-Caller-owned external commands remain opt-in through the documented Gradle properties.
+External tools run outside the build; see [EXTERNAL-VALIDATION.md](EXTERNAL-VALIDATION.md).
 
 ## V1 baseline capture
 
