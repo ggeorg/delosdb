@@ -131,16 +131,36 @@ ext.delosdbLegalFiles = files(
         file('NOTICE-FORK.md')
 )
 
+// Derby's message translations, each built into derbyLocale_<locale>.jar by
+// delosdb-locales, with the external names Derby gives them.
+ext.delosdbLocales = [
+        cs   : 'Czech/International [cs]',
+        de_DE: 'German/Germany [de_DE]',
+        es   : 'Spanish/International [es]',
+        fr   : 'French/International [fr]',
+        hu   : 'Hungarian/International [hu]',
+        it   : 'Italian/International [it]',
+        ja_JP: 'Japanese/Japan [ja_JP]',
+        ko_KR: 'Korean/Korea [ko_KR]',
+        pl   : 'Polish/International [pl]',
+        pt_BR: 'Portuguese/Brazil [pt_BR]',
+        ru   : 'Russian/International [ru]',
+        zh_CN: 'Simplified_Chinese/PR_China [zh_CN]',
+        zh_TW: 'Chinese/Taiwan_Traditional [zh_TW]'
+]
+def localeJars = ext.delosdbLocales.keySet().collect { "derbyLocale_${it}.jar" }.join(' ')
+
 // Derby's manifest Main-Class and Class-Path entries. Class-Path lets a jar
 // find the jars it needs beside it, which `java -jar derbyrun.jar <tool>`,
 // `java -jar derbynet.jar` and a class path naming only derbytools.jar rely
-// on. Derby's locale jars are not built and are left out; derby.jar also
-// names delosdb-spi.jar, which its module requires.
+// on, and lets derby.jar find the locale jars. derby.jar also names
+// delosdb-spi.jar, which its module requires.
 def derbyJarLaunchAttributes = [
-        'derby.jar'             : ['Class-Path': 'derbyshared.jar delosdb-spi.jar'],
-        'derbyclient.jar'       : ['Class-Path': 'derbyshared.jar'],
+        'derby.jar'             : ['Class-Path': "derbyshared.jar delosdb-spi.jar ${localeJars}"],
+        'derbyclient.jar'       : ['Class-Path': "derbyshared.jar ${localeJars}"],
+        'derbyshared.jar'       : ['Class-Path': localeJars],
         'derbytools.jar'        : ['Class-Path': 'derby.jar derbyclient.jar derbynet.jar'],
-        'derbyoptionaltools.jar': ['Class-Path': 'derbyshared.jar'],
+        'derbyoptionaltools.jar': ['Class-Path': "derbyshared.jar ${localeJars}"],
         'derbynet.jar'          : ['Main-Class': 'org.apache.derby.drda.NetworkServerControl',
                                    'Class-Path': 'derby.jar derbyshared.jar derbytools.jar'],
         'derbyrun.jar'          : ['Main-Class': 'org.apache.derby.run.run',
@@ -216,19 +236,31 @@ def generatedMessagesDir = layout.buildDirectory.dir('generated/messages')
 def englishMessagesFile = generatedMessagesDir.map { it.file('messages_en.properties') }
 def engineMessageOutputDir = project(':delosdb-engine').layout.buildDirectory.dir('generated/resources/messages/org/apache/derby/loc')
 def clientMessageOutputDir = project(':delosdb-client').layout.buildDirectory.dir('generated/resources/messages/org/apache/derby/loc/client')
-def localeMessageOutputDir = layout.buildDirectory.dir('generated/locale/org/apache/derby/loc')
+def engineTranslationDir = layout.projectDirectory.dir('delosdb-engine/src/main/java/org/apache/derby/loc')
+// Split messages are written below org/apache/derby/loc/locale_<locale>, where
+// delosdb-locales packs them; the test-only locale goes on the test class path.
+ext.delosdbLocaleMessageRoot = layout.buildDirectory.dir('generated/locale')
+ext.delosdbTestLocaleMessageRoot = layout.buildDirectory.dir('generated/test-locale')
+def localeMessageOutputDir = ext.delosdbLocaleMessageRoot.map { it.dir('org/apache/derby/loc') }
+def testLocaleMessageOutputDir = ext.delosdbTestLocaleMessageRoot.map { it.dir('org/apache/derby/loc') }
+def testOnlyLocale = 'qq_PP_testOnly'
 def englishMessageGeneratorClasspath = files(buildToolsClassDir)
 def splitMessagesClasspath = files(buildToolsClassDir, commonsClassDir)
 
 tasks.register('splitEngineMessages') {
     dependsOn 'compileDerbyBuildTools'
     inputs.file(engineMessagesXml)
+    inputs.files((rootProject.ext.delosdbLocales.keySet() + testOnlyLocale).collect {
+        engineTranslationDir.file("messages_${it}.properties")
+    }).withPropertyName('engineTranslations')
     inputs.files(englishMessageGeneratorClasspath, splitMessagesClasspath)
             .withPropertyName('messageGeneratorClasspath')
     outputs.file(englishMessagesFile)
     outputs.dir(engineMessageOutputDir)
     outputs.dir(clientMessageOutputDir)
     outputs.dir(localeMessageOutputDir)
+    outputs.dir(testLocaleMessageOutputDir)
+    def locales = rootProject.ext.delosdbLocales.keySet()
     doLast {
         def englishMessages = englishMessagesFile.get().asFile
         englishMessages.parentFile.mkdirs()
@@ -246,14 +278,29 @@ tasks.register('splitEngineMessages') {
         clientLoc.mkdirs()
         localeLoc.mkdirs()
 
-        execSupport.execOperations.javaexec { spec ->
-            spec.classpath = splitMessagesClasspath
-            spec.mainClass.set('org.apache.derbyBuild.splitmessages')
-            spec.args engineLoc.absolutePath,
-                    clientLoc.absolutePath,
-                    localeLoc.absolutePath,
-                    englishMessages.absolutePath
+        def split = { File translations, File clientDir, File localeDir ->
+            execSupport.execOperations.javaexec { spec ->
+                spec.classpath = splitMessagesClasspath
+                spec.mainClass.set('org.apache.derbyBuild.splitmessages')
+                spec.args engineLoc.absolutePath,
+                        clientDir.absolutePath,
+                        localeDir.absolutePath,
+                        translations.absolutePath
+            }
         }
+        split(englishMessages, clientLoc, localeLoc)
+        // Each translation yields the engine's m<N>_<locale> files and the
+        // client's clientmessages_<locale>, as Derby's doSplit target does.
+        locales.each { locale ->
+            split(engineTranslationDir.file("messages_${locale}.properties").asFile, clientLoc, localeLoc)
+        }
+        // The test-only locale's engine and client messages stay off the
+        // shipped jars and go on the test class path.
+        def testLocaleLoc = testLocaleMessageOutputDir.get().asFile
+        def testLocaleClientLoc = new File(testLocaleLoc, 'client')
+        testLocaleClientLoc.mkdirs()
+        split(engineTranslationDir.file("messages_${testOnlyLocale}.properties").asFile,
+                testLocaleClientLoc, testLocaleLoc)
     }
 }
 
@@ -658,6 +705,7 @@ def stableTestSuiteAliases = [
         'derbyStoreTests',
         'derbyNetworkTests',
         'derbyToolsTests',
+        'derbyI18nTests',
         'derbyUpgradeTests',
         'derbyAllTests',
         'delosUnitTests',
@@ -727,7 +775,8 @@ tasks.register('fullVerification') {
             tasks.named('derbyJdbcTests'),
             tasks.named('derbyStoreTests'),
             tasks.named('derbyNetworkTests'),
-            tasks.named('derbyToolsTests')
+            tasks.named('derbyToolsTests'),
+            tasks.named('derbyI18nTests')
 }
 
 tasks.register('nightlyVerification') {

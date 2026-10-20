@@ -128,11 +128,10 @@ tasks.named('processResources') {
         exclude '**/*.tmpl'
         exclude 'org/apache/derby/loc/*.properties'
     }
+    // The translations go into the locale jars (delosdb-locales).
     from('src/main/java/org/apache/derby/loc') {
-        include 'sysinfoMessages*.properties'
-        include 'sysinfomessages_pl.properties'
-        include 'toolsmessages*.properties'
-        rename 'sysinfomessages_pl.properties', 'sysinfoMessages_pl.properties'
+        include 'sysinfoMessages.properties'
+        include 'toolsmessages.properties'
         into 'org/apache/derby/loc/tools'
     }
     from project.ext.delosdbProductInfoResourceDir

@@ -22,7 +22,7 @@ DERBY-MOD-008|KEEP_DERBY_PEER|java/org.apache.derby.tests|:delosdb-tests|test mo
 DERBY-MOD-009|KEEP_DERBY_PEER|java/pptesting|:delosdb-pptesting|test helper module|Package-private inherited tests remain separate from production modules.
 DERBY-MOD-010|RETIRED_DERBY_PEER|java/storeless|-|none|Derby's storeless compiler/optimizer boot prototype; it was compiled but nothing booted or tested it, and it was retired from the build
 DERBY-MOD-011|KEEP_DERBY_PEER|java/stubs|:delosdb-osgi-stub|stub module|Inherited stub surface remains separate from production code.
-DERBY-MOD-012|KEEP_DERBY_PEER|java/locales|:delosdb-locales|locale verification module|Localization resources remain separately verified.
+DERBY-MOD-012|KEEP_DERBY_PEER|java/locales|:delosdb-locales|derbyLocale_<locale>.jar|Builds Derby's per-locale message jars from the module templates; derbyI18nTests verifies them.
 DERBY-MOD-013|KEEP_DERBY_PEER|java/demo|:delosdb-demos|demo module|Demos remain non-core and separately owned.
 DERBY-MOD-014|KEEP_DERBY_PEER|java/build|:delosdb-buildtools|build helper module|Build helper code remains separated from runtime artifacts.
 DERBY-MOD-017|DELOSDB_EXTENSION|none|:delosdb-spi|extension SPI|DelosDB-owned experimental SPI surface and its stability annotations.

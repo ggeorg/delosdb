@@ -198,7 +198,7 @@ declares the DelosDB modules its `module-info` requires) and `:delosdb-demos:com
 each demo on its own against the assembled runtime jars (it proves the demos compile, not that they
 run; `scores` is left out because it needs Apache Commons Math). Quick and full-tier functional partitions are
 disjoint, so `check` executes each functional test once. `fullVerification` adds the remaining
-non-stress DelosDB system tests and principal inherited JDBC/store/network/tools suites.
+non-stress DelosDB system tests and principal inherited JDBC/store/network/tools/i18n suites.
 `nightlyVerification` adds stress. `releaseVerification` runs the release authority directly through
 Derby `suites.All`, every DelosDB correctness lane, permanent gates and the release-only
 performance/report harnesses; it does not rerun the inherited suites

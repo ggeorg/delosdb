@@ -16,7 +16,10 @@ ext.delosdbRuntimeJarArtifacts = [
         [key: 'server',      gradleProject: 'delosdb-server',        jarTask: 'jar',            jarName: 'derbynet.jar'],
         [key: 'optional',    gradleProject: 'delosdb-optionaltools', jarTask: 'jar',  jarName: 'derbyoptionaltools.jar'],
         [key: 'runner',      gradleProject: 'delosdb-runner',        jarTask: 'jar',            jarName: 'derbyrun.jar']
-]
+] + rootProject.ext.delosdbLocales.keySet().collect { locale ->
+        [key: "locale_${locale}".toString(), gradleProject: 'delosdb-locales',
+         jarTask: "derbyLocaleJar_${locale}".toString(), jarName: "derbyLocale_${locale}.jar".toString()]
+}
 
 // Jars that are assembled but not placed on the Derby-compatible runtime
 // classpath. None remain: the store contracts, RawStore, heap and MVCC are all

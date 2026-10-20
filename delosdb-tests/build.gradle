@@ -284,6 +284,8 @@ def testRuntimeClasspath = {
             allTestSourceRoots,
             delosTestResourceRoot,
             toursDbSourceRoot,
+            // Messages for Derby's test-only qq_PP_testOnly locale (UrlLocaleTest).
+            rootProject.ext.delosdbTestLocaleMessageRoot,
             thirdPartyTestModules,
             gradleJUnitRuntime
     )

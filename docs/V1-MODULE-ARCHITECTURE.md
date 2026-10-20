@@ -114,6 +114,15 @@ retired. Discovery through `ExternalAccessMethodProvider` remains for optional p
 deferred `delosdb-search-lucene`. The store contracts are in `derby.jar` too; no separate store
 jar is assembled.
 
+Message translations ship as Derby's `derbyLocale_<locale>.jar` files, one per locale, built by
+`delosdb-locales` from the engine and tools translations and the module templates in
+`delosdb-locales/src/main/templates`. Each holds the engine messages split into
+`org/apache/derby/loc/locale_<locale>/m<N>_<locale>.properties`, the tool messages under
+`org/apache/derby/loc/tools/locale_<locale>`, and the module `org.apache.derby.locale_<locale>`.
+`derby.jar`'s manifest `Class-Path` names them, as Derby's does. Client and DRDA translations stay
+in `derbyclient.jar` and `derbynet.jar`. Derby's test-only `qq_PP_testOnly` locale is generated
+onto the test class path only. `derbyI18nTests` runs Derby's internationalization suite.
+
 The authoritative artifact model lives in:
 
 ```text

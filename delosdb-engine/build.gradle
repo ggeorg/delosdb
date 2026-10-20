@@ -125,6 +125,9 @@ tasks.named('processResources') {
         include '**/*.xml'
         exclude '**/messages.xml'
         exclude '**/*.tmpl'
+        // Message sources: splitEngineMessages turns them into the English
+        // m<N>_en files here and the translations in the locale jars.
+        exclude 'org/apache/derby/loc/messages*.properties'
     }
 }
 

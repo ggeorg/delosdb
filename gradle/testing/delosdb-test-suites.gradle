@@ -181,6 +181,11 @@ registerInheritedSuite(
         ['org/apache/derbyTesting/functionTests/tests/tools/_Suite.class'])
 
 registerInheritedSuite(
+        'derbyI18nTests',
+        'Runs the inherited Apache Derby internationalization suite against the locale jars.',
+        ['org/apache/derbyTesting/functionTests/tests/i18n/_Suite.class'])
+
+registerInheritedSuite(
         'derbyUpgradeTests',
         'Runs the inherited Apache Derby upgrade suite.',
         ['org/apache/derbyTesting/functionTests/tests/upgradeTests/_Suite.class'])
@@ -432,7 +437,7 @@ def stableSuiteAnalysis = tasks.register('delosStableTestSuiteStaticAnalysis') {
         List<String> publicTasks = [
                 'derbyUnitTests', 'derbyLanguageTests', 'derbyNistSql92Tests',
                 'derbyJdbcTests', 'derbyStoreTests', 'derbyNetworkTests',
-                'derbyToolsTests', 'derbyUpgradeTests', 'derbyAllTests',
+                'derbyToolsTests', 'derbyI18nTests', 'derbyUpgradeTests', 'derbyAllTests',
                 'delosUnitTests', 'delosFunctionalTests', 'delosConcurrencyTests',
                 'delosRecoveryTests', 'delosSystemTests', 'delosStressTests'
         ]
