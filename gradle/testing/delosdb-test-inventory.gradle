@@ -611,7 +611,10 @@ def generateDelosdbTestInventory = tasks.register('generateDelosdbTestInventory'
             writer.println('Inherited adaptations')
             inheritedAdaptedFiles.each { path ->
                 List<String> row = adaptationRows[path]
-                writer.println("  ${path}\t${row[3]}\t${row[4]}\t${row[6]}")
+                // An adaptation without a manifest row is listed under Issues and fails the task below.
+                writer.println(row == null
+                        ? "  ${path}\t(not in the adaptation manifest)"
+                        : "  ${path}\t${row[3]}\t${row[4]}\t${row[6]}")
             }
             writer.println()
             writer.println('Inherited adaptation-support additions')
