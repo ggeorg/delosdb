@@ -1,0 +1,63 @@
+plugins {
+    id 'java'
+}
+
+def repository = providers.gradleProperty('delosdbRepository').get()
+def delosdbVersion = providers.gradleProperty('delosdbVersion').get()
+def javaRelease = providers.gradleProperty('javaRelease').get() as int
+
+// Only the published repository, read through its POMs.
+repositories {
+    maven {
+        url = uri(repository)
+        metadataSources {
+            mavenPom()
+        }
+    }
+}
+
+// The probe is verification code, not production source, so it does not live
+// under src/main/java, which the repository's production-file gates scan.
+sourceSets {
+    main {
+        java {
+            srcDirs = ['probe']
+        }
+    }
+}
+
+dependencies {
+    implementation "io.github.ggeorg.delosdb:delosdb-engine:${delosdbVersion}"
+}
+
+tasks.named('compileJava', JavaCompile) {
+    options.release = javaRelease
+}
+
+tasks.register('resolvedArtifacts') {
+    def resolved = configurations.runtimeClasspath
+    def output = layout.buildDirectory.file('resolved-artifacts.txt')
+    outputs.file(output)
+    doLast {
+        output.get().asFile.text = resolved.resolvedConfiguration.resolvedArtifacts
+                .collect { it.moduleVersion.id.name }.sort().join('\n') + '\n'
+    }
+}
+
+def probeHome = layout.buildDirectory.dir('probe-home')
+
+tasks.register('classPathProbe', JavaExec) {
+    workingDir = probeHome
+    doFirst { probeHome.get().asFile.mkdirs() }
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'ConsumerProbe'
+}
+
+tasks.register('modulePathProbe', JavaExec) {
+    workingDir = probeHome
+    doFirst { probeHome.get().asFile.mkdirs() }
+    classpath = sourceSets.main.output
+    mainClass = 'ConsumerProbe'
+    def modules = configurations.runtimeClasspath
+    jvmArgumentProviders.add({ ['--module-path', modules.asPath, '--add-modules', 'org.apache.derby.engine'] } as CommandLineArgumentProvider)
+}

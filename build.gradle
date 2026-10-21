@@ -562,6 +562,7 @@ tasks.register('smoke', JavaExec) {
 // -----------------------------------------------------------------------------
 // Maven coordinates are DelosDB-branded even while the binary distribution keeps
 // Derby-compatible runtime jar names for now.
+ext.delosdbConsumerCheckRepository = layout.buildDirectory.dir('consumer-check/repository')
 ext.delosdbPublicationMetadata = [
         'delosdb-commons'      : [artifactId: 'delosdb-commons',       jarTask: 'jar',        title: 'DelosDB Shared Utilities', dependencies: []],
         'delosdb-spi'          : [artifactId: 'delosdb-spi',           jarTask: 'jar',       title: 'DelosDB SPI', dependencies: []],
@@ -577,9 +578,19 @@ subprojects { subproject ->
     def publicationInfo = rootProject.ext.delosdbPublicationMetadata[subproject.name]
     if (publicationInfo != null) {
         apply plugin: 'maven-publish'
+        tasks.matching { it.name == 'publishMavenJavaPublicationToConsumerCheckRepository' }.configureEach {
+            dependsOn ':cleanConsumerCheckRepository'
+        }
 
         afterEvaluate {
             publishing {
+                // A throwaway repository that verifyMavenConsumer resolves from.
+                repositories {
+                    maven {
+                        name = 'consumerCheck'
+                        url = rootProject.ext.delosdbConsumerCheckRepository
+                    }
+                }
                 publications {
                     create('mavenJava', org.gradle.api.publish.maven.MavenPublication) {
                         groupId = rootProject.group.toString()
@@ -682,10 +693,96 @@ tasks.register('verifyPublicationDependencies') {
     }
 }
 
+// verifyPublicationDependencies compares POMs with module descriptors; this
+// resolves them. A separate build that knows only the Maven coordinates and a
+// freshly published repository resolves delosdb-engine through its POM and runs
+// SQL on the class path and on the module path.
+tasks.register('cleanConsumerCheckRepository', Delete) {
+    delete rootProject.ext.delosdbConsumerCheckRepository
+}
+
+tasks.register('verifyMavenConsumer') {
+    group = 'verification'
+    description = 'Resolves delosdb-engine from a freshly published repository in a separate build and runs it.'
+    dependsOn rootProject.ext.delosdbPublicationMetadata.keySet().collect { ":${it}:publishMavenJavaPublicationToConsumerCheckRepository" }
+    def repository = rootProject.ext.delosdbConsumerCheckRepository
+    def consumerDir = file('gradle/maven-consumer-check')
+    def gradlew = file('gradlew')
+    def coordinates = [version: rootProject.version.toString(), release: rootProject.ext.javaRelease.toString()]
+    doLast {
+        def command = [gradlew.absolutePath, '-p', consumerDir.absolutePath, '--no-daemon', '-q',
+                       "-PdelosdbRepository=${repository.get().asFile.toURI()}".toString(),
+                       "-PdelosdbVersion=${coordinates.version}".toString(),
+                       "-PjavaRelease=${coordinates.release}".toString(),
+                       'resolvedArtifacts', 'classPathProbe', 'modulePathProbe']
+        def builder = new ProcessBuilder(command).redirectErrorStream(true)
+        builder.environment().put('JAVA_HOME', System.getProperty('java.home'))
+        def process = builder.start()
+        def output = process.inputStream.text
+        if (process.waitFor() != 0) {
+            throw new GradleException("The Maven consumer build failed:\n${output}")
+        }
+        def resolved = new File(consumerDir, 'build/resolved-artifacts.txt').readLines()
+        if (resolved != ['delosdb-commons', 'delosdb-engine', 'delosdb-spi']) {
+            throw new GradleException("delosdb-engine resolved to ${resolved}, expected commons, engine and spi")
+        }
+        if (!output.contains('CONSUMER_OK module=null ') || !output.contains('CONSUMER_OK module=org.apache.derby.engine ')) {
+            throw new GradleException("The consumer did not run on both the class path and the module path:\n${output}")
+        }
+    }
+}
+
+// derbyI18nTests puts every jar on the class path. Users more often name only
+// derby.jar, which finds the locale jars through its manifest Class-Path, or
+// use the module path, where the locale modules resolve through the
+// DerbyModuleAPI service.
+tasks.register('localeDiscoverySmoke') {
+    dependsOn 'jars'
+    group = 'verification'
+    description = 'Checks that engine messages are translated with only derby.jar on the class path and on the module path.'
+    def libs = layout.buildDirectory.dir('libs')
+    def probe = file('gradle/runtime-smoke/LocalizedErrorProbe.java')
+    doLast {
+        def java = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        def libDir = libs.get().asFile
+        def probeRuns = [
+                [label   : 'class path with only derby.jar', locale: 'de-DE', expected: 'ist nicht vorhanden',
+                 options : ['-cp', new File(libDir, 'derby.jar').absolutePath]],
+                [label   : 'module path', locale: 'it-IT', expected: 'inesistente',
+                 options : ['--module-path', libDir.absolutePath, '--add-modules', 'org.apache.derby.engine']]
+        ]
+        probeRuns.each { run ->
+            def command = [java] + run.options + [probe.absolutePath, run.locale]
+            def process = new ProcessBuilder(command).redirectErrorStream(true).start()
+            def output = process.inputStream.text
+            if (process.waitFor() != 0 || !output.contains('42X05') || !output.contains(run.expected)) {
+                throw new GradleException("${run.label}: no ${run.locale} engine message; expected '${run.expected}':\n${output}")
+            }
+        }
+    }
+}
+
+// ij prints a failed statement as an "ERROR <SQLState>" line and still exits 0,
+// so the tasks that run SQL scripts check their own output.
+['smoke', 'smokeFromJars', 'readableEngineDemo', 'readableWriteDemo'].each { taskName ->
+    tasks.named(taskName, JavaExec) { JavaExec task ->
+        def output = new ByteArrayOutputStream()
+        task.standardOutput = new org.apache.tools.ant.util.TeeOutputStream(System.out, output)
+        task.doLast {
+            def errors = output.toString('UTF-8').readLines().findAll { it.startsWith('ERROR ') }
+            if (!errors.isEmpty()) {
+                throw new GradleException("${task.name}: ij reported ${errors.size()} failed statement(s):\n  "
+                        + errors.join('\n  '))
+            }
+        }
+    }
+}
+
 tasks.register('derbyRuntimeSmoke') {
     group = 'verification'
-    description = 'Runs Derby-compatible runtime/JDBC smoke checks only.'
-    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars', 'jarLaunchSmoke'
+    description = 'Runs Derby-compatible runtime/JDBC smoke checks and the documented example scripts.'
+    dependsOn 'smoke', 'smokeFromJars', 'sysinfoFromJars', 'jarLaunchSmoke', 'localeDiscoverySmoke',
+            'readableEngineDemo', 'readableWriteDemo'
 }
 
 final List<Object> delosPermanentArchitectureDependencies = [
@@ -776,7 +873,8 @@ tasks.register('fullVerification') {
             tasks.named('derbyStoreTests'),
             tasks.named('derbyNetworkTests'),
             tasks.named('derbyToolsTests'),
-            tasks.named('derbyI18nTests')
+            tasks.named('derbyI18nTests'),
+            tasks.named('verifyMavenConsumer')
 }
 
 tasks.register('nightlyVerification') {

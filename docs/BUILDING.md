@@ -191,17 +191,25 @@ Verification levels:
 ./gradlew releaseVerification --console=plain
 ```
 
-`test` is unit-only. `quickVerification` adds DelosDB quick smoke and runtime smoke checks. `check`
+`test` is unit-only. `quickVerification` adds DelosDB quick smoke and the runtime smoke checks of
+`derbyRuntimeSmoke`: embedded SQL from the jars, `java -jar` on `derbyrun.jar` and `derbynet.jar`,
+translated engine messages with only `derby.jar` on the class path and on the module path
+(`localeDiscoverySmoke`), and the two documented example scripts. Every SQL script task fails on an
+`ERROR` line, because `ij` itself exits 0 after a failed statement. `check`
 adds the remaining DelosDB functional tests, concurrency and recovery lanes, Derby language, NIST
 SQL-92, permanent architecture/repository gates, `verifyPublicationDependencies` (each published POM
 declares the DelosDB modules its `module-info` requires) and `:delosdb-demos:compileDemos`, which compiles
 each demo on its own against the assembled runtime jars (it proves the demos compile, not that they
 run; `scores` is left out because it needs Apache Commons Math). Quick and full-tier functional partitions are
 disjoint, so `check` executes each functional test once. `fullVerification` adds the remaining
-non-stress DelosDB system tests and principal inherited JDBC/store/network/tools/i18n suites.
+non-stress DelosDB system tests, the principal inherited JDBC/store/network/tools/i18n suites and
+`verifyMavenConsumer`, which publishes every artifact to a throwaway repository and has a separate
+build (`gradle/maven-consumer-check`) resolve `delosdb-engine` through its POM and run SQL on the
+class path and the module path.
 `nightlyVerification` adds stress. `releaseVerification` runs the release authority directly through
-Derby `suites.All`, every DelosDB correctness lane, permanent gates and the release-only
-performance/report harnesses; it does not rerun the inherited suites
+Derby `suites.All`, every DelosDB correctness lane, permanent gates, the release-only
+performance/report harnesses and `delosMvccCrossBuildReopen`, which reopens databases written by a
+pinned earlier build (see [MVCC-PROFILES.md](MVCC-PROFILES.md)); it does not rerun the inherited suites
 individually before `suites.All`.
 
 The test module's own `:delosdb-tests:check` is intentionally structural: it compiles the test tree and

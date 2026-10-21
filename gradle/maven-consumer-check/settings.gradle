@@ -1,0 +1,3 @@
+// A separate build that knows DelosDB only by its Maven coordinates. Run by the
+// root verifyMavenConsumer task against a freshly published repository.
+rootProject.name = 'delosdb-maven-consumer-check'
