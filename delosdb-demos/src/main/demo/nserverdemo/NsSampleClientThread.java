@@ -79,7 +79,9 @@ class NsSampleWork {
 
 
 	public static int counter=0;
-	static Integer lock = 0;
+	// Guards counter. A boxed Integer must not be a lock: Integer.valueOf(0)
+	// is a JVM-wide shared instance that unrelated code may also lock.
+	static final Object lock = new Object();
 	 /**
 	  * dbUrl is the database url to connect to
 	  */
