@@ -1,12 +1,50 @@
 # DelosDB as an educational reference codebase
 
-**Decision direction:** preserve Derby-compatible databases, JDBC entry points and DRDA; reorganize internals incrementally. **Status:** comparison and migration design. Implemented so far: the benchmark restructuring, the kernel-service boundary slices, the engine build consolidation (2026-10-15) and the step 6 teaching material. This is not the module manifest; the current modules are in [V1-MODULE-ARCHITECTURE.md](../V1-MODULE-ARCHITECTURE.md).
+**Decision direction:** preserve Derby-compatible databases, JDBC entry points and DRDA; reorganize internals incrementally. **Status:** the structural plan below is implemented; [Status (2026-10-20)](#status-2026-10-20) separates what is done, what has been qualified and what remains. The later sections are the design and its history. This is not the module manifest; the current modules are in [V1-MODULE-ARCHITECTURE.md](../V1-MODULE-ARCHITECTURE.md).
 
 ## Purpose
 
 A fork author should be able to follow a real query, identify the owner of an algorithm, change that algorithm, and run its correctness and performance proofs. A student should encounter the production database, including its recovery and concurrency obligations. Organization should make these obligations visible.
 
 The criteria are ownership, comprehensible paths through the system, a manageable build, and executable extension boundaries. A lower module count or a new package prefix alone does not meet those criteria.
+
+## Status (2026-10-20)
+
+### Structural work completed
+
+- **One engine project and JPMS module.** `storage-mvcc`, `storage-derby`, `derby-store-api` and `runtime-api` are merged into `delosdb-engine` (2026-10-15); package ownership inside it is enforced by the package-boundary manifest that `delosModuleDependencyBoundaryStaticAnalysis` checks. One SQL/transaction authority and one RawStore/WAL/recovery authority remain, and heap and MVCC are peer access methods.
+- **Storeless retired** (570d032e, 2026-10-18). Derby's `java/storeless` prototype was compiled but never booted or tested; it is recorded as `RETIRED_DERBY_PEER` in the module-parity file.
+- **Annotations folded into SPI** (780ee74e, 2026-10-18). `@InternalApi`, `@LegacyInternal` and `@ExperimentalSpi` moved into `delosdb-spi` under the same package; `@PublicSpi` was removed (evidence in [V1-MODULE-ARCHITECTURE.md](../V1-MODULE-ARCHITECTURE.md)). The published engine POM now declares the SPI.
+- **Supported MVCC profiles** (6837c38f, 2026-10-18). [MVCC-PROFILES.md](../MVCC-PROFILES.md) defines profile 1 (default) and profile 2 (background maintenance) and maps each to its proofs; every engine property is classified in `delosdb-engine-properties.tsv`, which the integrity gate checks.
+- **Lock fast-path correction** (3723a876, 2026-10-18). The unlock slow path froze a record-read fast control that a concurrent request had just promoted; it now releases through the promoted control. `RecordReadFastPathTest` asserts no freezes and failed three of three runs without the fix.
+- **Deployment fixes found by qualification:** Derby's jar manifest `Class-Path` and `Main-Class` entries restored (629ae85d); Derby's locale jars built again, so translations are reachable (14f92fdf); CI runs on JDK 25 (678fcf7d).
+- **Commons** and the real deployment boundaries (client, server, tools, runner, optional tools, SPI) stay separate.
+
+### Qualification executed
+
+Recorded from runs in this period; each names what it covers.
+
+- `fullVerification` passed with no failures on 2026-10-19 (14f92fdf): Derby JDBC, store, network, tools, i18n, language and NIST suites, all DelosDB test tiers, the runtime smokes and the static gates. The dynamic heap/Derby compatibility contract passed the same day.
+- On 2026-10-20, with this round's checks added, `fullVerification` and the dynamic contract ran again: every test passed (Derby JDBC 9,114, language 3,220, store 435, network 330, tools 129, NIST 126, i18n 14; DelosDB functional 184, concurrency 77, recovery 57, unit 40, system 26), and the new consumer, locale, launch and example checks passed. The static contract failed once because the new Maven consumer probe sat under a `src/main/java` path, which the contract treats as production code; the probe moved to `gradle/maven-consumer-check/probe`, and the contract, the integrity gate and `verifyMavenConsumer` then passed.
+- Cross-build reopen: `delosMvccCrossBuildReopen` (2026-10-20) builds 5c01dc0d from history and reopens its profile-1 and profile-2 databases, cleanly shut down and halted after commit, with the current runtime (see [MVCC-PROFILES.md](../MVCC-PROFILES.md)). Manual reopens from 5c01dc0d and f64b8e4c passed on 2026-10-18.
+- Deployment (2026-10-20): `verifyMavenConsumer` resolves `delosdb-engine` from a freshly published repository in a separate build and runs SQL on the class path and the module path; Maven 3.9.9 resolved the same three artifacts and ran the same probe. `localeDiscoverySmoke` checks translated engine messages with only `derby.jar` on the class path and on the module path. `jarLaunchSmoke` runs `java -jar` on `derbyrun.jar` and `derbynet.jar`. The smoke scripts and both documented examples now fail on any SQL error. The jlink modular image serves heap and MVCC tables over DRDA (`V1ModularImageDrdaTest`).
+- Performance, matched and alternated against f64b8e4c (2026-10-18/19): JMH reads within ±3% (13 operations, heap and MVCC); concurrent commits within about ±2% with log syncs disabled (8 runs, p ≥ 0.29). With real syncs the laptop's commit timing varies too much (same-build spread up to 70%) to resolve differences below about 20%. No improvement is claimed.
+
+### Remaining gaps
+
+- CI has not run since its fix; the workflow has not yet been seen to pass on Linux.
+- The locale jars are not published to Maven, so Maven consumers get English messages only.
+- Cross-build reopen is proved from one pinned earlier build and one workload.
+- Jars are not byte-reproducible: rebuilding a commit gives a different `derby.jar` hash.
+- Four server design rules (servlet code only in `NetServlet`, no forced GC, `delos.drda.*` read only in `DrdaServerConfiguration`, virtual threads only from `DrdaThreading`) are no longer checked by any gate.
+- Open engine items: the held repeatable-read base-row controller has no lease; the F07 benchmark sets property names the engine no longer reads (F17); the physical-costing switches are named `experimental` but are on by default.
+
+### Superseded decisions
+
+- **`annotations` as a separate deployment boundary** (2026-10-16 plan table, and the candidate-owner and consolidation-target statements below): superseded on 2026-10-18 when the missing POM dependencies showed the engine could not start on the module path from Maven; folded into SPI.
+- **Retiring `delosdb-locales`** (suggested 2026-10-18): wrong; the module holds Derby's locale-jar templates and now builds the locale jars.
+- **A separate `delosdb-kernel` project**: withdrawn before the consolidation (see "Current execution plan").
+- The measured structure and the dependency map below are snapshots (`e1fc6c89`, `e9099f63`) of the build before the consolidation; their project names are historical.
 
 ## Sources inspected
 
@@ -92,7 +130,7 @@ The existing module identities remain authoritative until each migration is veri
 
 | Current owner | Candidate destination | Prerequisite |
 |---|---|---|
-| commons, annotations | foundation contracts, with annotations merged only if compatibility packaging permits (runtime-api was merged into the engine's kernel contracts, 2026-10-15) | Classify shared messages, errors, serialization, contexts and service APIs; retain module/jar facades where supported |
+| commons, annotations | foundation contracts (runtime-api was merged into the engine's kernel contracts, 2026-10-15; annotations were folded into SPI, 2026-10-18; commons stays separate) | Classify shared messages, errors, serialization, contexts and service APIs; retain module/jar facades where supported |
 | derby-store-api | the engine's `iapi.store` packages (merged 2026-10-15) | Preserve neutral page/access/transaction/type contracts and their public binary names |
 | engine service implementations | packages of the engine (see the consolidation below; `delosdb-kernel` is withdrawn) | Remove SQL implementation dependencies; classify storage-specific lock/cache fast paths rather than assuming they are generic |
 | engine SQL/catalog/types/JDBC | the engine's SQL package group; no separate `delosdb-sql` project, since SQL and storage share one JPMS module | Keep compiler and executor together; extract neutral models before any compiler/executor split |
@@ -101,7 +139,7 @@ The existing module identities remain authoritative until each migration is veri
 | storage-mvcc | merged into the engine as `impl.store.access.mvcc` (2026-10-15) | Preserve peer access-method status, provider discovery and shared RawStore ownership |
 | client/server | transport owners with clear DRDA names | Preserve wire protocol, security, module exports and independent deployment |
 | tests and benchmark support | component-local tests, shared compatibility/integration tests, dedicated benchmarks | Preserve suite registry, adaptation provenance, crash-worker classpaths and external-engine isolation |
-| tools, runner, optional tools, demos, locales, OSGi/build tooling | tooling, examples, resources and compatibility assembly | Classify active capabilities before retirement or consolidation; preserve distributions and documented entry points |
+| tools, runner, optional tools, demos, locales, OSGi/build tooling | tooling, examples, resources and compatibility assembly | Classified 2026-10-18: each has a role and stays; the demos are compiled in `check` and `delosdb-locales` builds the locale jars |
 
 Do not recreate the retired storage-api/storage-bridge/storage-io implementations under a new name. The store contracts are the engine's `iapi.store` packages, a refinement of the former neutral contract owner, not another persistence layer. Do not introduce a module for each lock, latch, page, optimizer rule or diagnostic flag.
 
@@ -155,9 +193,9 @@ Step 6, teachable forks (2026-10-15): besides the read trace (`readableEngineDem
 
 Status: implemented 2026-10-15: the package-boundary check and the `storage-mvcc`, `storage-derby`, `derby-store-api` and `runtime-api` merges.
 
-**Why.** Derby 10.17.1.0 compiles SQL, transactions, locks, access methods and RawStore together into one JPMS module, `org.apache.derby.engine`. DelosDB keeps `derby-store-api`, `storage-derby` and `storage-mvcc` as separate Gradle projects and then patches their classes into that same module: `derby-store-api` through `enginePatch`, the two storage projects through `derbyRuntimePatchElements`, all passed to `--patch-module` when the engine compiles. JPMS cannot isolate packages inside one module, so these projects add build concepts (patch configurations, per-project class directories, test-support patch lists) without runtime isolation. What they do give is compile-time enforcement: each storage project compiles only against `commons`, `runtime-api`, `annotations` and `derby-store-api`.
+**Why.** Derby 10.17.1.0 compiles SQL, transactions, locks, access methods and RawStore together into one JPMS module, `org.apache.derby.engine`. Before the consolidation, DelosDB kept `derby-store-api`, `storage-derby` and `storage-mvcc` as separate Gradle projects and then patched their classes into that same module: `derby-store-api` through `enginePatch`, the two storage projects through `derbyRuntimePatchElements`, all passed to `--patch-module` when the engine compiles. JPMS cannot isolate packages inside one module, so these projects add build concepts (patch configurations, per-project class directories, test-support patch lists) without runtime isolation. What they do give is compile-time enforcement: each storage project compiles only against `commons`, `runtime-api`, `annotations` and `derby-store-api`.
 
-**Target.** One engine Gradle project, matching the one engine module, with ownership expressed by packages and enforced by an executable package-boundary check. Projects that are real deployment or JPMS boundaries stay: `commons`, `client`, `server`, `tools`, `runner`, `optionaltools`, `spi`, `annotations`. `runtime-api` was a real JPMS module (`io.github.ggeorg.delosdb.runtime.api`); after its review below it was merged too.
+**Target.** One engine Gradle project, matching the one engine module, with ownership expressed by packages and enforced by an executable package-boundary check. Projects that are real deployment or JPMS boundaries stay: `commons`, `client`, `server`, `tools`, `runner`, `optionaltools`, `spi`, and at the time `annotations` (folded into `spi` on 2026-10-18). `runtime-api` was a real JPMS module (`io.github.ggeorg.delosdb.runtime.api`); after its review below it was merged too.
 
 **Projects merged into the engine project.**
 
@@ -211,7 +249,7 @@ The current forbidden project edges (engine → MVCC, MVCC → engine implementa
 
 Decision (2026-10-15): merged as recommended. `derby.jar` now holds its 1,798 previous entries plus the 144 `runtime-api` classes, byte-identical; only the `module-info` classes of `derby.jar`, `derbynet.jar`, `derbyoptionaltools.jar`, `derbyshared.jar` and `derbytools.jar` changed. The engine exports the kernel contracts with Derby's set, plus `iapi.xml` to `tools`, a DelosDB package Derby does not have; the tests reach `iapi.services.classfile` and `iapi.services.compiler` through test-only `--add-exports`. The package-boundary manifest gained a kernel-contracts group so the merged packages keep their former isolation.
 
-Recommendation: merge `runtime-api` into the engine project and module, as Derby has it, with Derby's export set for the inherited packages and DelosDB's own contracts unexported. `derby.jar` then carries its kernel contracts again, the public module surface shrinks to Derby's, and one module concept goes. Costs: the module name `io.github.ggeorg.delosdb.runtime.api` disappears (only `server`, `tools` and `optionaltools` require it, and `commons` exports six packages to it); the generated `ClassSizeCatalogImpl` moves to the engine; `buildtools` and `storeless` compile against engine classes; module-path code that used the wider exports loses them, which matches Derby. Whether `annotations` and `spi` should stay separate runtime jars is a separate question: `spi` is a supported public extension API.
+Recommendation: merge `runtime-api` into the engine project and module, as Derby has it, with Derby's export set for the inherited packages and DelosDB's own contracts unexported. `derby.jar` then carries its kernel contracts again, the public module surface shrinks to Derby's, and one module concept goes. Costs: the module name `io.github.ggeorg.delosdb.runtime.api` disappears (only `server`, `tools` and `optionaltools` require it, and `commons` exports six packages to it); the generated `ClassSizeCatalogImpl` moves to the engine; `buildtools` and `storeless` compile against engine classes; module-path code that used the wider exports loses them, which matches Derby. Whether `annotations` and `spi` should stay separate runtime jars was a separate question: `spi` is a supported public extension API. It was settled on 2026-10-18: `annotations` is folded into `spi`.
 
 ## Core query and storage dependency map
 

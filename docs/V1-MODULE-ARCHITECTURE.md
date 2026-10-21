@@ -61,7 +61,16 @@ that boots it.
 `@ExperimentalSpi`). Its only users were `delosdb-spi` and the engine, which already requires the
 SPI, and because the engine's published POM did not name either module, the engine could not start
 as a Java module from Maven. The annotations moved into `delosdb-spi` under the same package,
-`io.github.ggeorg.delosdb.spi.annotation`; the unused `@PublicSpi` was removed.
+`io.github.ggeorg.delosdb.spi.annotation`, which `delosdb-spi` exports.
+
+`@PublicSpi` was removed rather than moved. The removal breaks no supported contract: it was never
+applied to any declaration in the repository's history; its retention was `CLASS`, so no runtime
+code could read it; the rule that public SPI contracts must carry it lived in
+`docs/SPI-STABILITY.md`, which was withdrawn as unverified on 2026-06-14 (57e6070d); and DelosDB has
+never released anything: there are no tags, no GitHub releases, no artifacts on Maven Central, and
+the build has never configured a remote Maven repository, so `delosdb-annotations` only ever reached
+local Maven repositories. Code outside the repository that annotated itself with `@PublicSpi`
+against such a local build would no longer compile; no such consumer is known.
 
 ## Ownership rules
 
