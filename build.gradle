@@ -801,7 +801,8 @@ tasks.register('releaseVerification') {
             ':delosdb-tests:delosTestProvenanceStaticAnalysis',
             ':delosdb-tests:delosStableTestSuiteStaticAnalysis',
             ':delosdb-tests:delosIsolationSpecStaticAnalysis',
-            ':delosdb-tests:delosPerformanceHarnessTests'
+            ':delosdb-tests:delosPerformanceHarnessTests',
+            ':delosdb-tests:delosMvccCrossBuildReopen'
 }
 
 tasks.named('build') {

@@ -32,6 +32,25 @@ Proofs, by suite in `gradle/testing/delos-test-suite-registry.tsv`:
 | Recovery | `MvccRawStoreRecoveryTest`, `MvccRawStoreDecisionWalCrashTest`, `DelosDdlCrashAtomicityTest`, `MvccSqlBackupRestoreTest`, `HeapMvccDrdaServerRestartTest` |
 | Network access | `MvccDrdaNetworkClientTest`, `MvccDrdaConcurrentNetworkClientTest`, `V1ModularImageDrdaTest` |
 | Heap compatibility with Derby | `runDelosHeapDerbyStaticCompatibilityContract`, `runDelosHeapDerbyDynamicCompatibilityContract` |
+| Reopen across builds | `delosMvccCrossBuildReopen` (below) |
+
+## Reopening databases written by an earlier build
+
+`./gradlew :delosdb-tests:delosMvccCrossBuildReopen` builds the runtime jars of a pinned earlier
+commit (5c01dc0d by default, `-Pdelosdb.crossBuild.earlierCommit=<commit>` to change it; it must be a
+strict ancestor of HEAD) from git history in its own directory. For each profile, in separate JVMs,
+that build writes two databases, one shut down cleanly and one halted right after its last commit,
+with a heap and a `delos_mvcc` table: committed inserts, updates (including unique-key changes),
+deletes, unique keys reused by new rows, and a rolled-back delete. The current packaged runtime then
+reopens each database and checks every row against a model of the workload, secondary, unique and
+primary-key index lookups, `SYSCS_CHECK_TABLE`, that duplicate primary and unique keys are rejected,
+and that it can write and reopen again. Each JVM reports the jar it loaded the engine from, and the
+task fails unless they are the earlier and the current `derby.jar`. The report is
+`build/reports/delosdb/mvcc-cross-build-reopen.txt`.
+
+This is the cross-build guarantee; the restart and crash tests under Recovery reopen databases with
+the build that wrote them. The task needs the repository history, so it runs in
+`releaseVerification`, not in `check` or CI.
 
 ## Profile 2: default with background maintenance
 
@@ -75,7 +94,7 @@ injects crashes for recovery tests.
 
 ## Known gaps
 
-- No automated test proves that an MVCC database written by one DelosDB build opens in a later
-  build. The heap format is covered by the Derby compatibility contracts; the MVCC format is not.
+- Cross-build reopen is proved from one pinned earlier build, 5c01dc0d (2026-10-14), not from every
+  earlier commit, and only for the workload above.
 - The two physical-costing switches are named `experimental` but are on by default and part of
   profile 1.

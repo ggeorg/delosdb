@@ -5949,6 +5949,7 @@ ext.delosdbStableTestSuiteContext = [
 ]
 apply from: rootProject.file('gradle/testing/delosdb-test-suites.gradle')
 apply from: rootProject.file('gradle/testing/delosdb-isolation-specifications.gradle')
+apply from: rootProject.file('gradle/testing/delosdb-cross-build-reopen.gradle')
 
 // Post-Gate-6H five-engine read-concurrency re-baseline. This deliberately
 // reproduces the benchmark-truth read-shape matrix that exposed the inherited

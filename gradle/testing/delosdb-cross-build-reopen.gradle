@@ -1,0 +1,145 @@
+// Cross-build MVCC reopen compatibility (docs/MVCC-PROFILES.md).
+//
+// A pinned earlier DelosDB build writes databases in separate JVMs; the current
+// packaged runtime (the jars in build/libs) reopens them in other JVMs. This is
+// not a same-build restart test, which delosRecoveryTests covers. The earlier
+// build is exported from git history with `git archive` and built in its own
+// directory, so the task needs the repository history and is not part of check.
+
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.security.MessageDigest
+
+def earlierCommit = providers.gradleProperty('delosdb.crossBuild.earlierCommit').getOrElse('5c01dc0d')
+def crossBuildRoot = layout.buildDirectory.dir('cross-build-reopen')
+def earlierRoot = crossBuildRoot.map { it.dir("earlier-${earlierCommit}") }
+def workloadSource = file('src/delosTestSupport/java/org/apache/derbyTesting/functionTests/tests/delos/MvccCrossBuildReopenWorkload.java')
+def workloadClasses = crossBuildRoot.map { it.dir('workload-classes') }
+def workloadMain = 'org.apache.derbyTesting.functionTests.tests.delos.MvccCrossBuildReopenWorkload'
+def repositoryRoot = rootProject.projectDir
+def currentRuntimeJars = rootProject.ext.delosdbRuntimeJarFiles.call()
+// The supported profiles; experiments are not part of the guarantee.
+def supportedProfiles = [
+        'profile-1-default'    : [:],
+        'profile-2-maintenance': ['delosdb.mvcc.rawStoreMaintenance.enabled': 'true']
+]
+
+def runProcess = { List<String> command, File workingDirectory, Map<String, String> environment ->
+    def builder = new ProcessBuilder(command).directory(workingDirectory).redirectErrorStream(true)
+    builder.environment().putAll(environment)
+    def process = builder.start()
+    String output = process.inputStream.getText(StandardCharsets.UTF_8.name())
+    int exitCode = process.waitFor()
+    if (exitCode != 0) {
+        throw new GradleException("Command failed with exit code ${exitCode}: ${command.join(' ')}\n${output}")
+    }
+    output
+}
+
+def sha256 = { File file ->
+    MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString()
+}
+
+tasks.register('prepareCrossBuildEarlierRuntime') {
+    description = "Builds the runtime jars of DelosDB ${earlierCommit} from git history in its own directory."
+    inputs.property('earlierCommit', earlierCommit)
+    outputs.dir(earlierRoot)
+    doLast {
+        File root = earlierRoot.get().asFile
+        File source = new File(root, 'source')
+        File libs = new File(root, 'libs')
+        project.delete(root)
+        source.mkdirs()
+        libs.mkdirs()
+        String fullCommit = runProcess(['git', 'rev-parse', '--verify', "${earlierCommit}^{commit}".toString()],
+                repositoryRoot, [:]).trim()
+        // Jars are not byte-reproducible, so a rebuild of the current commit would
+        // look like a different build. Only a strict ancestor is an earlier build.
+        String headCommit = runProcess(['git', 'rev-parse', 'HEAD'], repositoryRoot, [:]).trim()
+        def ancestor = new ProcessBuilder('git', 'merge-base', '--is-ancestor', fullCommit, headCommit)
+                .directory(repositoryRoot).start()
+        if (fullCommit == headCommit || ancestor.waitFor() != 0) {
+            throw new GradleException("${earlierCommit} (${fullCommit}) is not an earlier build: "
+                    + "it must be a strict ancestor of HEAD (${headCommit}).")
+        }
+        File archive = new File(root, 'source.tar')
+        runProcess(['git', 'archive', '--format=tar', '-o', archive.absolutePath, fullCommit], repositoryRoot, [:])
+        runProcess(['tar', '-xf', archive.absolutePath, '-C', source.absolutePath], root, [:])
+        runProcess([new File(source, 'gradlew').absolutePath, '--no-daemon', '-q', 'jars'], source,
+                [JAVA_HOME: System.getProperty('java.home')])
+        project.copy {
+            from(new File(source, 'build/libs')) { include '*.jar' }
+            into libs
+        }
+        project.delete(source, archive)
+        new File(root, 'identity.txt').withWriter('UTF-8') { writer ->
+            writer.println("commit ${fullCommit}")
+            libs.listFiles().sort { it.name }.each { writer.println("${sha256(it)}  ${it.name}") }
+        }
+    }
+}
+
+tasks.register('compileCrossBuildReopenWorkload', JavaCompile) {
+    description = 'Compiles the cross-build reopen workload without DelosDB classes, so it runs on any build.'
+    source = files(workloadSource)
+    classpath = files()
+    destinationDirectory = workloadClasses
+    sourceCompatibility = rootProject.ext.javaRelease.toString()
+    targetCompatibility = rootProject.ext.javaRelease.toString()
+    options.release = rootProject.ext.javaRelease
+    options.encoding = 'UTF-8'
+}
+
+tasks.register('delosMvccCrossBuildReopen') {
+    group = 'verification'
+    description = "Reopens MVCC and heap databases written by DelosDB ${earlierCommit} with the current packaged runtime."
+    dependsOn 'prepareCrossBuildEarlierRuntime', 'compileCrossBuildReopenWorkload', ':jars'
+    def report = rootProject.layout.buildDirectory.file('reports/delosdb/mvcc-cross-build-reopen.txt')
+    outputs.upToDateWhen { false }
+    doLast {
+        File earlierLibs = new File(earlierRoot.get().asFile, 'libs')
+        File earlierEngine = new File(earlierLibs, 'derby.jar')
+        File currentEngine = currentRuntimeJars.find { it.name == 'derby.jar' }
+        if (sha256(earlierEngine) == sha256(currentEngine)) {
+            throw new GradleException("The earlier build's derby.jar is identical to the current one; "
+                    + "${earlierCommit} does not exercise a cross-build reopen.")
+        }
+        String java = new File(System.getProperty('java.home'), 'bin/java').absolutePath
+        String classes = workloadClasses.get().asFile.absolutePath
+        String earlierClasspath = ([classes] + earlierLibs.listFiles().findAll { it.name.endsWith('.jar') }
+                .sort { it.name }.collect { it.absolutePath }).join(File.pathSeparator)
+        String currentClasspath = ([classes] + currentRuntimeJars.collect { it.absolutePath }).join(File.pathSeparator)
+        File runRoot = crossBuildRoot.get().dir('run').asFile
+        project.delete(runRoot)
+
+        List<String> lines = ["earlier build: ${new File(earlierRoot.get().asFile, 'identity.txt').readLines().first()}",
+                              "current derby.jar: ${sha256(currentEngine)}"]
+        supportedProfiles.each { profile, properties ->
+            File profileRoot = new File(runRoot, profile)
+            profileRoot.mkdirs()
+            List<String> jvmProperties = (properties + ['derby.system.home': profileRoot.absolutePath])
+                    .collect { key, value -> "-D${key}=${value}".toString() }
+            ['clean', 'halt'].each { variant ->
+                String database = new File(profileRoot, variant).absolutePath
+                String created = runProcess([java] + jvmProperties
+                        + ['-cp', earlierClasspath, workloadMain, 'create', database, variant], profileRoot, [:])
+                String verified = runProcess([java] + jvmProperties
+                        + ['-cp', currentClasspath, workloadMain, 'verify', database], profileRoot, [:])
+                // Each side must have loaded the engine from its own build, and
+                // the halt variant must have stopped without shutting down.
+                String createdMarker = variant == 'halt' ? 'HALT after commit' : 'CREATED'
+                if (!created.contains("DRIVER ${earlierEngine.toURI()}") || !created.contains(createdMarker)) {
+                    throw new GradleException("${profile}/${variant} was not created by ${earlierEngine}:\n${created}")
+                }
+                if (!verified.contains("DRIVER ${currentEngine.toURI()}") || !verified.contains('VERIFIED')) {
+                    throw new GradleException("${profile}/${variant} was not verified by ${currentEngine}:\n${verified}")
+                }
+                lines << "${profile} ${variant}: created by ${earlierCommit}, verified by the current runtime".toString()
+            }
+        }
+        File reportFile = report.get().asFile
+        reportFile.parentFile.mkdirs()
+        Files.write(reportFile.toPath(), lines, StandardCharsets.UTF_8)
+        lines.each { logger.lifecycle(it) }
+    }
+}
